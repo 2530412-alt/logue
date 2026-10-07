@@ -43,6 +43,8 @@ suspend fun login(username: String, password: String): LoginResult = try {
     }
 } catch (e: CancellationException) {
     throw e // no tragarse la cancelación de la corrutina
-} catch (e: Exception) {
+} catch (e: Throwable) {
+    // Throwable y no Exception: en la versión web, Ktor avisa la falla de red con un Error,
+    // y un catch (e: Exception) no lo atrapa (el botón se quedaba en "Entrando...").
     LoginResult.NetworkError
 }
