@@ -7,6 +7,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 
+/**
+ * Raíz de la app. Mantiene la sesión en memoria:
+ * sin sesión -> LoginScreen; con sesión -> pantalla según el rol.
+ */
 @Composable
 fun App() {
     AquaGoTheme {
@@ -24,10 +28,10 @@ fun App() {
                     LoginScreen { session = it }
                 } else {
                     when (current.role) {
-                        "CIUDADANO" -> CiudadanoScreen(current, logout)
-                        "OPERADOR" -> OperadorScreen(current, logout)
-                        "ADMIN" -> AdminScreen(current, logout)
-                        else -> LoginScreen { session = it }
+                        Roles.CIUDADANO -> CiudadanoScreen(current, logout)
+                        Roles.OPERADOR -> OperadorScreen(current, logout)
+                        Roles.ADMIN -> AdminScreen(current, logout)
+                        else -> UnknownRoleScreen(current.role, logout)
                     }
                 }
             }

@@ -11,13 +11,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
+/** Pantalla de inicio de sesión. Llama a [onLoggedIn] con los datos de la sesión si el login es correcto. */
 @Composable
 fun LoginScreen(onLoggedIn: (LoginResponse) -> Unit) {
     var user by remember { mutableStateOf("") }
@@ -44,7 +44,7 @@ fun LoginScreen(onLoggedIn: (LoginResponse) -> Unit) {
             Modifier.size(92.dp).clip(RoundedCornerShape(26.dp)).background(AppColors.Accent),
             contentAlignment = Alignment.Center
         ) {
-            Text("AG", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("AG", color = AppColors.OnAccent, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(16.dp))
         Text("AquaGo", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
@@ -74,7 +74,7 @@ fun LoginScreen(onLoggedIn: (LoginResponse) -> Unit) {
                 visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
                     TextButton(onClick = { showPass = !showPass }) {
-                        Text(if (showPass) "Ocultar" else "Mostrar", color = AppColors.PrimaryLight)
+                        Text(if (showPass) "Ocultar" else "Mostrar", color = AppColors.Accent)
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -82,20 +82,29 @@ fun LoginScreen(onLoggedIn: (LoginResponse) -> Unit) {
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = {
-                    scope.launch {
-                        loading = true
-                        error = null
-                        val res = try { login(user, pass) } catch (e: Exception) { null }
-                        loading = false
-                        if (res == null) error = "Credenciales incorrectas o sin conexión"
-                        else onLoggedIn(res)
+                    // 1) Validar los campos; 2) llamar al backend; 3) mostrar el mensaje que corresponda.
+                    val validation = validateCredentials(user, pass)
+                    if (validation != null) {
+                        error = validation
+                    } else {
+                        scope.launch {
+                            loading = true
+                            error = null
+                            when (val result = login(user, pass)) {
+                                is LoginResult.Success -> onLoggedIn(result.session)
+                                LoginResult.InvalidCredentials -> error = "Usuario o contraseña incorrectos"
+                                LoginResult.ServerError -> error = "El servidor tuvo un problema. Intenta de nuevo"
+                                LoginResult.NetworkError -> error = "No se pudo conectar con el servidor. ¿Está encendido el backend?"
+                            }
+                            loading = false
+                        }
                     }
                 },
                 enabled = !loading,
                 shape = CircleShape,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = AppColors.Primary,
-                    contentColor = Color.White
+                    containerColor = AppColors.Accent,
+                    contentColor = AppColors.OnAccent
                 ),
                 modifier = Modifier.fillMaxWidth().height(54.dp)
             ) {
