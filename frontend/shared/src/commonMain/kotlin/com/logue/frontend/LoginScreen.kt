@@ -85,15 +85,10 @@ fun LoginScreen(onLoggedIn: (LoginResponse) -> Unit) {
                     scope.launch {
                         loading = true
                         error = null
-                        val res = login(user, pass)
+                        val res = try { login(user, pass) } catch (e: Exception) { null }
                         loading = false
-                        when (res) {
-                            is ResultadoLogin.Exito -> onLoggedIn(res.sesion)
-                            ResultadoLogin.CredencialesIncorrectas ->
-                                error = "Usuario o contraseña incorrectos"
-                            ResultadoLogin.SinConexion ->
-                                error = "No se pudo conectar con el servidor ($BASE_URL). Revisa que el backend esté encendido."
-                        }
+                        if (res == null) error = "Credenciales incorrectas o sin conexión"
+                        else onLoggedIn(res)
                     }
                 },
                 enabled = !loading,

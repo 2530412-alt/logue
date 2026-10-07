@@ -2,8 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Android 17+: necesario para conectarse a 10.0.2.2 (la computadora vista desde el emulador) -->
-    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <application
             android:allowBackup="true"
