@@ -24,4 +24,5 @@ dependencies {
 
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)
+    implementation("io.ktor:ktor-server-cors:3.6.0")
 }
