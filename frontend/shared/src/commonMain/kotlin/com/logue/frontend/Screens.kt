@@ -12,9 +12,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
+// NOTA: los datos de las pantallas (estadísticas y solicitudes) son de DEMOSTRACIÓN.
+// El backend actual solo implementa el login; las listas se conectarían a nuevos endpoints.
+
+/** Tarjeta de estadística (número grande + etiqueta). */
 data class Stat(val value: String, val label: String, val color: Color)
+/** Renglón de la lista (hora, título, subtítulo y estado con color). */
 data class Entry(val time: String, val title: String, val subtitle: String, val status: String, val color: Color)
 
+/** Pantalla genérica reutilizada por los tres roles: cambia solo el contenido que recibe. */
 @Composable
 fun RoleScreen(
     title: String,
@@ -132,3 +138,24 @@ fun AdminScreen(session: LoginResponse, onLogout: () -> Unit) = RoleScreen(
     ),
     onLogout = onLogout
 )
+
+/** Se muestra si el backend devuelve un rol que la app no conoce. */
+@Composable
+fun UnknownRoleScreen(role: String, onLogout: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("Rol no reconocido: $role", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = onLogout,
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = AppColors.Accent,
+                contentColor = AppColors.OnAccent
+            )
+        ) { Text("Volver al inicio de sesión") }
+    }
+}
