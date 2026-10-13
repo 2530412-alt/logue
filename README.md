@@ -83,12 +83,13 @@ logue/
 │       │   ├── main.kt               Arranca Netty en el puerto 8081 (o el de la variable PORT)
 │       │   ├── Application.kt        rootModule(): instala CORS, serialización y rutas
 │       │   ├── Serialization.kt      install(ContentNegotiation) { json() }
-│       │   ├── Routing.kt            Lee users.json y define GET / y POST /login
-│       │   └── Models.kt             DTOs @Serializable: User, LoginRequest, LoginResponse
+│       │   ├── Routing.kt            Lee users.json y define GET /, POST /login y /pagos-prediales
+│       │   ├── PagosPrediales.kt     Guarda en disco las fotos de los pagos prediales
+│       │   └── Models.kt             DTOs @Serializable: User, LoginRequest, LoginResponse, PagoPredial
 │       ├── main/resources/
 │       │   ├── users.json            Credenciales predefinidas y rol de cada usuario
 │       │   └── logback.xml           Formato del registro en consola
-│       └── test/kotlin/ServerTest.kt Prueba de la API con testApplication
+│       └── test/kotlin/              ServerTest.kt y PagosPredialesTest.kt (API con testApplication)
 │
 └── frontend/                         PROYECTO KOTLIN MULTIPLATFORM (Android Studio)
     ├── androidApp/                   App Android: MainActivity.kt y AndroidManifest.xml (permisos de red)
@@ -144,6 +145,28 @@ Las clases que viajan por la red llevan `@Serializable`. Así el compilador gene
 |---|---|---|---|
 | GET | `/` | — | `Logue backend funcionando` |
 | POST | `/login` | `{ "username": "admin", "password": "1234" }` | `200 { "username": "admin", "role": "ADMIN" }` · `401` credenciales incorrectas · `400` campos vacíos |
+| POST | `/pagos-prediales` | `multipart/form-data`: `username`, `folio` (opcional), `foto` (JPEG o PNG, máx. 10 MB) | `201 { id, username, folio, fecha, tipo, tamano }` · `400` datos inválidos · `401` usuario desconocido · `413` foto muy grande · `415` no es JPEG ni PNG |
+| GET | `/pagos-prediales?username=ciudadano` | — | `200` lista de pagos de ese usuario, del más reciente al más antiguo |
+| GET | `/pagos-prediales/{id}/foto` | — | La imagen guardada · `404` si no existe |
+
+## Cámara y huella digital (Android)
+
+El **ciudadano** tiene el botón **Registrar pago predial** en su pantalla. El flujo es:
+
+1. **Tomar foto del recibo:** abre la app de cámara del sistema (`TakePicture` + `FileProvider`), así que no se necesita el permiso `CAMERA` y la foto llega en resolución completa.
+2. **Enviar pago:** si el teléfono tiene huella registrada, se muestra el diálogo del sistema (`BiometricPrompt`) para confirmar. Si no tiene, se envía sin confirmar y la pantalla lo avisa.
+3. La foto viaja por `POST /pagos-prediales` y el backend la guarda en `backend/uploads/pagos/` (cambia con la variable de entorno `PAGOS_DIR`) como `<id>.jpg` más un `<id>.json` con el folio, la fecha y el usuario.
+
+| Pieza | Archivo |
+|---|---|
+| Pantalla | `PagoPredialScreen.kt` |
+| Cámara (`expect`) / Android (`actual`) | `PhotoCapture.kt` / `PhotoCapture.android.kt` |
+| Huella (`expect`) / Android (`actual`) | `Biometric.kt` / `Biometric.android.kt` |
+| Envío al backend | `PagosApi.kt` |
+| iOS y web | `Sensors.<plataforma>.kt`: por ahora indican que la cámara y la huella no están disponibles |
+| Android | `AndroidManifest.xml` (`FileProvider`), `res/xml/file_paths.xml`, `MainActivity` extiende `FragmentActivity` |
+
+> El almacenamiento es local y de práctica. Todavía no hay sesión con token: el backend confía en el `username` que manda la app. Antes de producción hay que autenticar las peticiones y mover las fotos a una base de datos o almacenamiento en la nube.
 
 ## Cómo ejecutarlo
 

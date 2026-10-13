@@ -1,11 +1,16 @@
 package com.logue
 
 import io.ktor.http.*
+import io.ktor.http.content.PartData
+import io.ktor.http.content.forEachPart
 import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.utils.io.toByteArray
 import kotlinx.serialization.json.Json
+import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Lee los usuarios de prueba desde `resources/users.json`.
@@ -18,8 +23,14 @@ fun loadUsers(): List<User> {
     return Json.decodeFromString(text)
 }
 
-/** Rutas del backend. Los usuarios se cargan una sola vez (se pueden inyectar en pruebas). */
-fun Application.configureRouting(users: List<User> = loadUsers()) {
+/** Carpeta donde se guardan las fotos de pagos prediales (variable de entorno PAGOS_DIR, o `uploads/pagos`). */
+fun defaultPagoStore() = PagoStore(File(System.getenv("PAGOS_DIR") ?: "uploads/pagos"))
+
+/** Rutas del backend. Los usuarios y el almacén de fotos se pueden inyectar en pruebas. */
+fun Application.configureRouting(
+    users: List<User> = loadUsers(),
+    pagos: PagoStore = defaultPagoStore()
+) {
     routing {
         get("/") {
             call.respondText("Logue backend funcionando")
@@ -44,6 +55,82 @@ fun Application.configureRouting(users: List<User> = loadUsers()) {
                 call.respond(HttpStatusCode.Unauthorized)
             } else {
                 call.respond(LoginResponse(user.username, user.role))
+            }
+        }
+
+        // POST /pagos-prediales (multipart: username, folio opcional, foto)
+        //   -> 201 + PagoPredial | 400 datos inválidos | 401 usuario desconocido
+        //      413 foto muy grande | 415 no es JPEG ni PNG
+        post("/pagos-prediales") {
+            val declared = call.request.contentLength()
+            if (declared != null && declared > MAX_FOTO_BYTES + 64 * 1024) {
+                call.respond(HttpStatusCode.PayloadTooLarge, "La foto pesa más de 10 MB")
+                return@post
+            }
+
+            var username = ""
+            var folio = ""
+            var fotoRecibida: ByteArray? = null
+            try {
+                call.receiveMultipart().forEachPart { part ->
+                    when (part) {
+                        is PartData.FormItem -> when (part.name) {
+                            "username" -> username = part.value.trim()
+                            "folio" -> folio = part.value.trim()
+                        }
+                        is PartData.FileItem -> if (part.name == "foto") fotoRecibida = part.provider().toByteArray()
+                        else -> {}
+                    }
+                    part.dispose()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.BadRequest, "Solicitud inválida")
+                return@post
+            }
+
+            val foto = fotoRecibida ?: ByteArray(0)
+            when {
+                username.isBlank() || username.length > 50 ->
+                    call.respond(HttpStatusCode.BadRequest, "Usuario inválido")
+                folio.length > 40 ->
+                    call.respond(HttpStatusCode.BadRequest, "El folio no puede pasar de 40 caracteres")
+                users.none { it.username == username } ->
+                    call.respond(HttpStatusCode.Unauthorized, "Usuario desconocido")
+                foto.isEmpty() ->
+                    call.respond(HttpStatusCode.BadRequest, "Falta la foto")
+                foto.size > MAX_FOTO_BYTES ->
+                    call.respond(HttpStatusCode.PayloadTooLarge, "La foto pesa más de 10 MB")
+                else -> {
+                    val tipo = detectImageType(foto)
+                    if (tipo == null) {
+                        call.respond(HttpStatusCode.UnsupportedMediaType, "La foto debe ser JPEG o PNG")
+                    } else {
+                        call.respond(HttpStatusCode.Created, pagos.save(username, folio, tipo, foto))
+                    }
+                }
+            }
+        }
+
+        // GET /pagos-prediales?username=...  ->  lista de pagos de ese usuario
+        get("/pagos-prediales") {
+            val username = call.request.queryParameters["username"]?.trim()
+            if (username.isNullOrBlank()) {
+                call.respond(HttpStatusCode.BadRequest, "Falta el parámetro username")
+            } else {
+                call.respond(pagos.list(username))
+            }
+        }
+
+        // GET /pagos-prediales/{id}/foto  ->  la imagen guardada (404 si no existe)
+        get("/pagos-prediales/{id}/foto") {
+            val found = pagos.photo(call.parameters["id"].orEmpty())
+            if (found == null) {
+                call.respond(HttpStatusCode.NotFound)
+            } else {
+                val (pago, file) = found
+                call.respondBytes(file.readBytes(), ContentType.parse(pago.tipo))
             }
         }
     }

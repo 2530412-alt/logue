@@ -3,14 +3,15 @@ package com.logue.frontend
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.fragment.app.FragmentActivity
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity (que ya es una ComponentActivity) porque BiometricPrompt la necesita
+class MainActivity : FragmentActivity() {
 
     // Si el usuario niega el permiso, el login dirá que no se pudo conectar con el servidor
     private val pedirRedLocal = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }

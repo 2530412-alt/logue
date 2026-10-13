@@ -20,9 +20,11 @@ fun App() {
     AquaGoTheme {
         var session by remember { mutableStateOf<LoginResponse?>(null) }
         var authScreen by remember { mutableStateOf(AuthScreen.LOGIN) }
+        var showPagoPredial by remember { mutableStateOf(false) }
         val logout = {
             session = null
             authScreen = AuthScreen.LOGIN
+            showPagoPredial = false
         }
         val backToLogin = { authScreen = AuthScreen.LOGIN }
         val current = session
@@ -45,7 +47,9 @@ fun App() {
                     }
                 } else {
                     when (current.role) {
-                        Roles.CIUDADANO -> CiudadanoScreen(current, logout)
+                        Roles.CIUDADANO ->
+                            if (showPagoPredial) PagoPredialScreen(current) { showPagoPredial = false }
+                            else CiudadanoScreen(current, logout) { showPagoPredial = true }
                         Roles.OPERADOR -> OperadorScreen(current, logout)
                         Roles.ADMIN -> AdminScreen(current, logout)
                         else -> UnknownRoleScreen(current.role, logout)

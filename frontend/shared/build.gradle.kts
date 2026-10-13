@@ -57,6 +57,12 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
             implementation("io.ktor:ktor-client-okhttp:3.6.0")
+            // Cámara (TakePicture + FileProvider) y huella digital (BiometricPrompt)
+            implementation(libs.androidx.activity.compose)
+            implementation(libs.androidx.core.ktx)
+            // appcompat trae un fragment moderno; el de biometric solo es viejo y chocaría con activity 1.13
+            implementation(libs.androidx.appcompat)
+            implementation(libs.androidx.biometric)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)

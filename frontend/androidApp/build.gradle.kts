@@ -14,6 +14,9 @@ dependencies {
     implementation(project(":shared"))
 
     implementation(libs.androidx.activity.compose)
+    // MainActivity extiende FragmentActivity (lo exige BiometricPrompt)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.biometric)
 
     implementation(libs.compose.uiToolingPreview)
     debugImplementation(libs.compose.uiTooling)
