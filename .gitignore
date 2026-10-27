@@ -19,3 +19,6 @@ gradle-app.setting
 .kotlin/
 local.properties
 *.iml
+
+# Fotos de pagos prediales guardadas por el backend
+backend/uploads/
