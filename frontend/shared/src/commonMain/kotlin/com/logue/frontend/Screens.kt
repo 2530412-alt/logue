@@ -29,7 +29,8 @@ fun RoleScreen(
     stats: List<Stat>,
     sectionTitle: String,
     entries: List<Entry>,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    actions: @Composable ColumnScope.() -> Unit = {}
 ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -55,6 +56,8 @@ fun RoleScreen(
             Spacer(Modifier.width(10.dp))
             Text(name, color = AppColors.TextMuted)
         }
+
+        actions()
 
         stats.chunked(2).forEach { pair ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -83,7 +86,7 @@ fun RoleScreen(
 }
 
 @Composable
-fun CiudadanoScreen(session: LoginResponse, onLogout: () -> Unit) = RoleScreen(
+fun CiudadanoScreen(session: LoginResponse, onLogout: () -> Unit, onPagoPredial: () -> Unit) = RoleScreen(
     title = "Mis solicitudes",
     roleLabel = "Ciudadano",
     name = session.username,
@@ -98,7 +101,8 @@ fun CiudadanoScreen(session: LoginResponse, onLogout: () -> Unit) = RoleScreen(
         Entry("16:30", "Pipa de 5,000 L", "Calle Hidalgo #12", "Pendiente", AppColors.Yellow),
         Entry("08:00", "Pipa de 10,000 L", "Calle Hidalgo #12", "Entregada", AppColors.Green)
     ),
-    onLogout = onLogout
+    onLogout = onLogout,
+    actions = { PrimaryButton("Registrar pago predial", onClick = onPagoPredial) }
 )
 
 @Composable

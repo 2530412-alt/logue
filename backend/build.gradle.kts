@@ -25,4 +25,6 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)
     implementation("io.ktor:ktor-server-cors:3.6.0")
+    // SSH / SFTP: copia de las fotos de pagos prediales a un servidor remoto
+    implementation("com.hierynomus:sshj:0.39.0")
 }

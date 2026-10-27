@@ -5,6 +5,10 @@
     <!-- Android 17+: necesario para conectarse a 10.0.2.2 (la computadora vista desde el emulador) -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
+    <!-- Cámara dentro de la app (CameraX). El permiso se pide al abrir la cámara -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <application
             android:allowBackup="true"
             android:usesCleartextTraffic="true"
@@ -22,6 +26,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
     </application>
 
 </manifest>
