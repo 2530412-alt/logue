@@ -60,6 +60,12 @@ class PagoStore(private val dir: File) {
             .filter { it.username == username }
             .sortedByDescending { it.fecha }
 
+    /** Los dos archivos de un pago (foto y datos), para copiarlos a otro equipo. Vacío si el id no existe. */
+    fun files(id: String): List<File> {
+        val (_, photo) = photo(id) ?: return emptyList()
+        return listOf(photo, File(dir, "${photo.nameWithoutExtension}.json"))
+    }
+
     /** Foto de un pago. El id debe ser un UUID válido: así no se puede salir de la carpeta (../). */
     fun photo(id: String): Pair<PagoPredial, File>? {
         val uuid = runCatching { UUID.fromString(id).toString() }.getOrNull() ?: return null

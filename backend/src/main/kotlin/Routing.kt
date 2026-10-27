@@ -8,6 +8,8 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.utils.io.toByteArray
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
@@ -29,7 +31,8 @@ fun defaultPagoStore() = PagoStore(File(System.getenv("PAGOS_DIR") ?: "uploads/p
 /** Rutas del backend. Los usuarios y el almacén de fotos se pueden inyectar en pruebas. */
 fun Application.configureRouting(
     users: List<User> = loadUsers(),
-    pagos: PagoStore = defaultPagoStore()
+    pagos: PagoStore = defaultPagoStore(),
+    remote: RemoteCopier? = loadRemoteCopier()
 ) {
     routing {
         get("/") {
@@ -107,7 +110,23 @@ fun Application.configureRouting(
                     if (tipo == null) {
                         call.respond(HttpStatusCode.UnsupportedMediaType, "La foto debe ser JPEG o PNG")
                     } else {
-                        call.respond(HttpStatusCode.Created, pagos.save(username, folio, tipo, foto))
+                        val pago = pagos.save(username, folio, tipo, foto)
+                        // El disco local es la copia principal. Si hay SFTP configurado, la copia al
+                        // servidor remoto se hace aparte para no hacer esperar al usuario ni fallar el pago.
+                        remote?.let { copier ->
+                            val archivos = pagos.files(pago.id)
+                            val app = call.application
+                            app.launch(Dispatchers.IO) {
+                                for (archivo in archivos) {
+                                    try {
+                                        copier.copy(archivo, archivo.name)
+                                    } catch (e: Exception) {
+                                        app.log.warn("No se pudo copiar ${archivo.name} por SFTP: ${e.message}")
+                                    }
+                                }
+                            }
+                        }
+                        call.respond(HttpStatusCode.Created, pago)
                     }
                 }
             }

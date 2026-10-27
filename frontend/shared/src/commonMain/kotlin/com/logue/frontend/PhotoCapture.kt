@@ -3,26 +3,16 @@ package com.logue.frontend
 import androidx.compose.runtime.Composable
 
 /**
- * Cámara del teléfono. Cada plataforma decide cómo tomar la foto (`actual`).
- * En Android abre la app de cámara del sistema; en las demás plataformas todavía no existe.
+ * Cámara dentro de la app (vista previa en vivo y botón de captura).
+ * Cada plataforma la implementa con su propia API (`actual`); por ahora solo existe en Android.
  */
-interface PhotoCapture {
-    /** `false` si esta plataforma no tiene cámara implementada (iOS y web por ahora). */
-    val isSupported: Boolean
 
-    /** Abre la cámara. El resultado llega al callback de [rememberPhotoCapture]. */
-    fun launch()
-}
+/** `false` si esta plataforma todavía no tiene la cámara implementada (iOS y web). */
+expect val isCameraSupported: Boolean
 
 /**
- * Prepara la cámara. [onPhoto] recibe los bytes de la foto (JPEG),
- * o `null` si el usuario canceló o la foto no se pudo leer.
+ * Pantalla completa con la cámara. Al tomar la foto llama a [onPhoto] con los bytes (JPEG);
+ * [onClose] se llama si el usuario cancela, si niega el permiso o si el botón "atrás" se presiona.
  */
 @Composable
-expect fun rememberPhotoCapture(onPhoto: (ByteArray?) -> Unit): PhotoCapture
-
-/** Para las plataformas donde la cámara no está implementada. */
-object UnsupportedPhotoCapture : PhotoCapture {
-    override val isSupported = false
-    override fun launch() {}
-}
+expect fun CameraCaptureScreen(onPhoto: (ByteArray) -> Unit, onClose: () -> Unit)

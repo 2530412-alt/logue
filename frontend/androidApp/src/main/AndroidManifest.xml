@@ -5,14 +5,9 @@
     <!-- Android 17+: necesario para conectarse a 10.0.2.2 (la computadora vista desde el emulador) -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
-    <!-- La foto la toma la app de cámara del sistema: no se necesita el permiso CAMERA -->
+    <!-- Cámara dentro de la app (CameraX). El permiso se pide al abrir la cámara -->
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
-
-    <queries>
-        <intent>
-            <action android:name="android.media.action.IMAGE_CAPTURE" />
-        </intent>
-    </queries>
 
     <application
             android:allowBackup="true"
@@ -32,16 +27,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Comparte la foto temporal con la app de cámara. La autoridad debe ser "<applicationId>.fileprovider" -->
-        <provider
-                android:name="androidx.core.content.FileProvider"
-                android:authorities="${applicationId}.fileprovider"
-                android:exported="false"
-                android:grantUriPermissions="true">
-            <meta-data
-                    android:name="android.support.FILE_PROVIDER_PATHS"
-                    android:resource="@xml/file_paths" />
-        </provider>
     </application>
 
 </manifest>

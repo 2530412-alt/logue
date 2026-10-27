@@ -24,14 +24,21 @@ fun PagoPredialScreen(session: LoginResponse, onBack: () -> Unit) {
     var saved by remember { mutableStateOf<PagoPredialResponse?>(null) }
     val scope = rememberCoroutineScope()
 
-    val camera = rememberPhotoCapture { bytes ->
-        // null = el usuario canceló: se conserva la foto anterior, si había
-        if (bytes != null) {
-            foto = bytes
-            error = null
-        }
-    }
+    var showCamera by remember { mutableStateOf(false) }
     val biometric = rememberBiometricAuth()
+
+    // La cámara ocupa toda la pantalla. Si el usuario cancela se conserva la foto anterior, si había.
+    if (showCamera) {
+        CameraCaptureScreen(
+            onPhoto = { bytes ->
+                foto = bytes
+                error = null
+                showCamera = false
+            },
+            onClose = { showCamera = false }
+        )
+        return
+    }
     PlatformBackHandler(onBack)
 
     fun upload(bytes: ByteArray) {
@@ -110,7 +117,7 @@ fun PagoPredialScreen(session: LoginResponse, onBack: () -> Unit) {
                 )
                 Spacer(Modifier.height(14.dp))
 
-                if (!camera.isSupported) {
+                if (!isCameraSupported) {
                     Text(
                         "La cámara solo está disponible en la app de Android por ahora.",
                         color = AppColors.TextMuted,
@@ -125,7 +132,7 @@ fun PagoPredialScreen(session: LoginResponse, onBack: () -> Unit) {
                     SecondaryButton(
                         text = if (bytes == null) "Tomar foto del recibo" else "Tomar otra foto",
                         enabled = !sending,
-                        onClick = { camera.launch() }
+                        onClick = { showCamera = true }
                     )
                 }
             }
