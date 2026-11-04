@@ -54,10 +54,12 @@ class PagoStore(private val dir: File) {
     }
 
     /** Pagos de un usuario, del más reciente al más antiguo. */
-    fun list(username: String): List<PagoPredial> =
+    fun list(username: String): List<PagoPredial> = listAll().filter { it.username == username }
+
+    /** Todos los pagos, del más reciente al más antiguo (solo lo consulta el delegado). */
+    fun listAll(): List<PagoPredial> =
         (dir.listFiles { f -> f.extension == "json" } ?: emptyArray())
             .mapNotNull { runCatching { json.decodeFromString(PagoPredial.serializer(), it.readText()) }.getOrNull() }
-            .filter { it.username == username }
             .sortedByDescending { it.fecha }
 
     /** Los dos archivos de un pago (foto y datos), para copiarlos a otro equipo. Vacío si el id no existe. */

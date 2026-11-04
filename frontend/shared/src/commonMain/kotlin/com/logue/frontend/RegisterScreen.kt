@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -28,17 +29,17 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun RegisterScreen(onBack: () -> Unit) {
-    var fullName by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var street by remember { mutableStateOf("") }
-    var neighborhood by remember { mutableStateOf("") }
-    var receiptFile by remember { mutableStateOf<String?>(null) }
-    var username by remember { mutableStateOf("") }
+    var fullName by rememberSaveable { mutableStateOf("") }
+    var phone by rememberSaveable { mutableStateOf("") }
+    var street by rememberSaveable { mutableStateOf("") }
+    var neighborhood by rememberSaveable { mutableStateOf("") }
+    var receiptFile by rememberSaveable { mutableStateOf<String?>(null) }
+    var username by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
-    var registered by remember { mutableStateOf(false) }
+    var registered by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     PlatformBackHandler(onBack = onBack)
 

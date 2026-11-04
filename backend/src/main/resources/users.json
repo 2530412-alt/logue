@@ -1,5 +1,5 @@
 [
-  { "username": "ciudadano", "password": "1234", "role": "CIUDADANO" },
-  { "username": "operador",  "password": "1234", "role": "OPERADOR" },
-  { "username": "admin",     "password": "1234", "role": "ADMIN" }
+  { "username": "ciudadano", "passwordHash": "$2a$10$eDR3AEkQH/1iYdZVSaJdwOeUEgtAQgXNt5UY37OcmMttC6xKDG6km", "role": "CIUDADANO" },
+  { "username": "operador",  "passwordHash": "$2a$10$jClevbngIf1w1h7wa9lw4OrBgp3XWrE4PP0UOAcXKoe.scwahcA9S", "role": "OPERADOR" },
+  { "username": "admin",     "passwordHash": "$2a$10$DvsWueDTIc7OhLqTStRI8OFHplpVWuQVHpiOHvC5yctgyt/07RzKa", "role": "ADMIN" }
 ]

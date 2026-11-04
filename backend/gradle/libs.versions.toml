@@ -1,9 +1,11 @@
 [versions]
 kotlin = "2.4.0"
 logback = "1.5.37"
+bcrypt = "0.10.2"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+bcrypt = { module = "at.favre.lib:bcrypt", version.ref = "bcrypt" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

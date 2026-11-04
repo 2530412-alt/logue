@@ -18,7 +18,7 @@ El proyecto está dividido en dos partes que se ejecutan por separado y se comun
 
 | Parte | Carpeta | Tecnología | Qué hace |
 |---|---|---|---|
-| **Backend** | [`backend/`](backend) | Ktor Server 3.6, generado con el asistente [start.ktor.io](https://start.ktor.io), motor Netty | API REST local en el puerto **8081**. Valida las credenciales de `users.json` y responde con el rol del usuario |
+| **Backend** | [`backend/`](backend) | Ktor Server 3.6, generado con el asistente [start.ktor.io](https://start.ktor.io), motor Netty | API REST en el puerto **8081** (local) o en la nube. Valida las credenciales de `users.json` con BCrypt y responde con el rol y un token |
 | **Frontend** | [`frontend/`](frontend) | Kotlin Multiplatform + Compose Multiplatform, Ktor Client | App para Android (Android Studio), web e iOS. Login, Crear cuenta, Recuperar contraseña y una vista por rol |
 
 ## Arquitectura local
@@ -30,25 +30,25 @@ El proyecto está dividido en dos partes que se ejecutan por separado y se comun
 │                                              │                   │ ───────► │     │                                    │
 │                               Ktor Client + ContentNegotiation   │          │  call.receive<LoginRequest>()            │
 │                                              │                   │ ◄─────── │     │  compara con                       │
-│  App.kt guarda la sesión (username + role)   │                   │ username │  resources/users.json                    │
-│      │                                                           │  + role  │     │                                    │
-│      └─► when (role)                                             │          │  200 LoginResponse(username, role)       │
+│  App.kt guarda la sesión (username, role,    │                   │ username │  resources/users.json (hash BCrypt)      │
+│        token)                                                    │  + role  │     │                                    │
+│      └─► when (role)                                             │ + token  │  200 LoginResponse(username, role, token)│
 │            ├─ CIUDADANO → CiudadanoScreen  "Mis solicitudes"     │          │  401 credenciales incorrectas            │
-│            ├─ OPERADOR  → OperadorScreen   "Mis entregas de hoy" │          │  400 solicitud vacía o inválida          │
+│            ├─ OPERADOR  → OperadorScreen   "Mis entregas de hoy" │          │  429 cuenta bloqueada · 400 inválida     │
 │            └─ ADMIN     → AdminScreen      "Panel de solicitudes"│          │                                          │
 └──────────────────────────────────────────────────────────────────┘          └──────────────────────────────────────────┘
 ```
 
-1. El usuario escribe su usuario y contraseña en **LoginScreen**.
+1. El usuario escribe su usuario y contraseña en **LoginScreen**. Mientras escribe, la app ya despertó al servidor con `GET /salud`.
 2. **validateCredentials()** revisa que no estén vacíos y **login()** manda `POST /login`. Ktor Client convierte el objeto `LoginRequest` a JSON.
-3. El backend convierte ese JSON en `LoginRequest` y busca al usuario en **users.json**:
-   - Si coincide, responde `200` con `LoginResponse(username, role)`.
-   - Si no coincide, responde `401`.
+3. El backend convierte ese JSON en `LoginRequest`, busca al usuario en **users.json** y compara la contraseña con su hash BCrypt:
+   - Si coincide, responde `200` con `LoginResponse(username, role, token, expiresIn)`.
+   - Si no coincide, responde `401`. Al tercer intento fallido, responde `429` y bloquea la cuenta 5 minutos.
    - Si los campos llegan vacíos, responde `400`.
-4. **App.kt** guarda la sesión y, con un `when (role)`, muestra la vista que corresponde a ese rol.
-5. Al presionar **Cerrar sesión**, la sesión se borra y la app vuelve al login.
+4. **App.kt** guarda la sesión (con el token) y, con un `when (role)`, muestra la vista que corresponde a ese rol. Cada petición siguiente manda `Authorization: Bearer <token>`.
+5. Al presionar **Cerrar sesión**, la sesión se borra y la app vuelve al login. Si el token vence (12 h), la app regresa sola al login con el aviso «Tu sesión expiró».
 
-La pantalla muestra un mensaje distinto para cada caso: usuario o contraseña incorrectos, error del servidor o sin conexión con el backend.
+La pantalla muestra un mensaje distinto para cada caso: usuario o contraseña incorrectos, cuenta bloqueada, error del servidor, sin conexión o «Despertando el servidor...» cuando la primera petición tarda.
 
 ## Usuarios de prueba (`backend/src/main/resources/users.json`)
 
@@ -58,7 +58,10 @@ La pantalla muestra un mensaje distinto para cada caso: usuario o contraseña in
 | Operador (repartidor) | `operador` | `1234` | **Mis entregas de hoy:** ruta del día y entregas |
 | Administrador (delegado) | `admin` | `1234` | **Panel de solicitudes:** pendientes, en camino, entregadas y canceladas |
 
-> En esta etapa las credenciales son predefinidas y están en texto plano dentro del JSON, como lo pide la práctica.
+> Las credenciales siguen predefinidas en el JSON, como lo pide la práctica, pero desde la Fase 1 el archivo guarda solo el
+> **hash BCrypt** de cada contraseña (`passwordHash`), nunca el texto. Para agregar un usuario, genera su hash con
+> `gradlew run --args="hash MiContraseña"` y pégalo en `users.json`. En la Fase 2 los usuarios pasan a MySQL.
+> Antes del piloto cambien las contraseñas `1234`: el repositorio es público.
 > Los datos que muestra cada vista son de demostración; se conectarán al backend en las siguientes etapas.
 
 ## Pantallas demostrativas de acceso
@@ -80,17 +83,20 @@ logue/
 │   ├── build.gradle.kts              Dependencias: Ktor Server, Netty, ContentNegotiation, CORS, kotlinx.serialization
 │   └── src/
 │       ├── main/kotlin/
-│       │   ├── main.kt               Arranca Netty en el puerto 8081 (o el de la variable PORT)
-│       │   ├── Application.kt        rootModule(): instala CORS, serialización y rutas
+│       │   ├── main.kt               Arranca Netty en el puerto 8081 (o PORT); comandos «hash» y «probar»
+│       │   ├── Application.kt        aquaGoModule(): registro de peticiones, CORS, serialización, errores, seguridad y rutas
+│       │   ├── Security.kt           Token JWT, permisos por rol, bloqueo por intentos y límite por IP
+│       │   ├── Users.kt              Hash BCrypt de contraseñas y lectura de users.json (UserRepository)
 │       │   ├── Serialization.kt      install(ContentNegotiation) { json() }
-│       │   ├── Routing.kt            Lee users.json y define GET /, POST /login y /pagos-prediales
+│       │   ├── Routing.kt            GET /, GET /salud, POST /login y /pagos-prediales (protegidas con token)
 │       │   ├── PagosPrediales.kt     Guarda en disco las fotos de los pagos prediales
 │       │   ├── RemoteCopy.kt         Copia opcional de las fotos a otro servidor por SFTP (SSH)
-│       │   └── Models.kt             DTOs @Serializable: User, LoginRequest, LoginResponse, PagoPredial
+│       │   ├── Probador.kt           Pruebas funcionales y de rendimiento contra el servidor desplegado
+│       │   └── Models.kt             DTOs @Serializable: User, LoginRequest, LoginResponse, Salud, PagoPredial
 │       ├── main/resources/
-│       │   ├── users.json            Credenciales predefinidas y rol de cada usuario
+│       │   ├── users.json            Usuarios predefinidos con el hash BCrypt de su contraseña y su rol
 │       │   └── logback.xml           Formato del registro en consola
-│       └── test/kotlin/              ServerTest.kt, PagosPredialesTest.kt y RemoteCopyTest.kt (API con testApplication)
+│       └── test/kotlin/              AuthTest, PagosPredialesTest, RemoteCopyTest y ServerTest (36 pruebas con testApplication)
 │
 └── frontend/                         PROYECTO KOTLIN MULTIPLATFORM (Android Studio)
     ├── androidApp/                   App Android: MainActivity.kt y AndroidManifest.xml (permisos de red)
@@ -104,14 +110,15 @@ logue/
         │   ├── RegisterScreen.kt     Crear cuenta (demostrativa)
         │   ├── RecoverPasswordScreen.kt  Recuperar contraseña (demostrativa)
         │   ├── Screens.kt            Vistas por rol: Ciudadano, Operador, Administrador
-        │   ├── AuthApi.kt            Ktor Client: POST /login y resultado del login
+        │   ├── AuthApi.kt            Ktor Client: POST /login, resultado del login y despertar al servidor
+        │   ├── PagosApi.kt           POST /pagos-prediales con el token
         │   ├── AuthValidation.kt     Reglas de los formularios
         │   ├── Dtos.kt               DTOs @Serializable y roles
-        │   ├── Config.kt             expect val BASE_URL (dirección del backend)
+        │   ├── Config.kt             SERVIDOR_NUBE, expect val SERVIDOR_LOCAL y BASE_URL según SERVIDOR_URL
         │   ├── AuthComponents.kt / Components.kt   Piezas de interfaz reutilizables
         │   └── Theme.kt / AquaGoTheme.kt           Colores y tema de AquaGo
-        ├── androidMain/ jsMain/ wasmJsMain/ iosMain/   CÓDIGO ESPECÍFICO: actual val BASE_URL
-        └── commonTest/               Pruebas de las validaciones
+        ├── androidMain/ jsMain/ wasmJsMain/ iosMain/   CÓDIGO ESPECÍFICO: actual val SERVIDOR_LOCAL
+        └── commonTest/               Pruebas de las validaciones y de la dirección del servidor
 ```
 
 ## Conexión con el serializador (kotlinx.serialization)
@@ -122,33 +129,80 @@ Las clases que viajan por la red llevan `@Serializable`. Así el compilador gene
 |---|---|---|
 | Plugin de Gradle | `org.jetbrains.kotlin.plugin.serialization` en `backend/build.gradle.kts` y `frontend/shared/build.gradle.kts` | Genera el serializador de cada clase `@Serializable` |
 | Backend | `Serialization.kt` | `install(ContentNegotiation) { json() }`: `call.receive<LoginRequest>()` lee JSON y `call.respond(LoginResponse(...))` responde JSON |
-| Backend | `Routing.kt` | `loadUsers()` lee `users.json` y `Json.decodeFromString(...)` lo convierte en `List<User>` |
+| Backend | `Users.kt` | `loadUsers()` lee `users.json` y `Json.decodeFromString(...)` lo convierte en `List<User>` |
 | Frontend | `AuthApi.kt` | `install(ContentNegotiation) { json() }` en Ktor Client: `setBody(LoginRequest(...))` envía JSON y `res.body()` lo convierte en `LoginResponse` |
-| Ambos | `Models.kt` (backend) y `Dtos.kt` (frontend) | DTOs con los mismos nombres de campo: `LoginRequest(username, password)` y `LoginResponse(username, role)` |
+| Ambos | `Models.kt` (backend) y `Dtos.kt` (frontend) | DTOs con los mismos nombres de campo: `LoginRequest(username, password)` y `LoginResponse(username, role, token, expiresIn)` |
 
 ## Dirección del backend por plataforma
 
-`Config.kt` declara `expect val BASE_URL` y cada plataforma define su valor (`actual`):
+Por defecto **todas las plataformas usan el servidor en la nube** (`SERVIDOR_NUBE` en `Config.kt`, con HTTPS), así la app
+funciona en cualquier teléfono y con cualquier red. Para trabajar con el backend de tu computadora no se edita código:
+se usa la variable `SERVIDOR_URL` en `frontend/local.properties`, que no se sube a GitHub. Hay un ejemplo en
+`frontend/local.properties.ejemplo`.
 
-| Plataforma | Archivo | BASE_URL |
+| `SERVIDOR_URL` en local.properties | A dónde se conecta la app de Android |
+|---|---|
+| (sin definir) | Servidor en la nube: `https://logue-backend.onrender.com` |
+| `local` | Backend de tu PC visto desde el emulador: `http://10.0.2.2:8081` (`SERVIDOR_LOCAL` de `Config.android.kt`) |
+| `http://localhost:8081` | Celular por cable con `adb reverse tcp:8081 tcp:8081` |
+| `http://192.168.1.70:8081` | Celular en la misma red Wi-Fi (IP de tu PC, comando `ipconfig`) |
+| `https://tu-servicio.up.railway.app` | Otro servidor en la nube |
+
+`Config.kt` conserva `expect`/`actual` para lo que sí cambia por plataforma, la dirección local: `10.0.2.2` en el emulador
+de Android y `localhost` en iOS y la web. `androidApp/build.gradle.kts` lee `SERVIDOR_URL` y la entrega como
+`BuildConfig.SERVIDOR_URL`; `MainActivity` se la pasa a `configurarServidor()`. Si el backend se muda a Railway,
+solo cambia la constante `SERVIDOR_NUBE`.
+
+**HTTPS en Android** (`androidApp/src/*/res/xml/network_security_config.xml`):
+- La versión **release** solo permite HTTPS. Antes, `usesCleartextTraffic="true"` dejaba viajar sin cifrar cualquier petición, incluida la contraseña.
+- La versión **debug** (la que corre desde Android Studio) permite HTTP para llegar al backend local.
+- `ACCESS_LOCAL_NETWORK`: desde **Android 17** hace falta para llegar a `10.0.2.2`. `MainActivity` lo pide al abrir la app; solo importa con el backend local.
+
+**Servidor dormido.** Render gratuito apaga el servicio tras 15 minutos sin uso y tarda cerca de un minuto en
+despertar. La app lo despierta con `GET /salud` en cuanto se abre el login, espera hasta 75 s al iniciar sesión y, si
+tarda más de 4 s, muestra «Despertando el servidor...» en lugar de un error.
+
+**Sesión que no se pierde.** La sesión y los campos de los formularios usan `rememberSaveable`: girar el teléfono o
+cambiar el tamaño de letra ya no cierra la sesión. La contraseña y la foto se quedan fuera a propósito: la contraseña
+para no guardarla en el estado del sistema, y la foto porque varios MB no caben ahí.
+
+## Seguridad (Fase 1 del inventario)
+
+| Función | Cómo quedó | Dónde |
 |---|---|---|
-| Emulador de Android | `Config.android.kt` | `http://10.0.2.2:8081`: 10.0.2.2 es la computadora vista desde el emulador |
-| Web | `Config.js.kt`, `Config.wasmJs.kt` | `http://localhost:8081` |
-| iOS (simulador) | `Config.ios.kt` | `http://localhost:8081` |
+| USR-15 Contraseñas con hash | `users.json` guarda `passwordHash` (BCrypt, costo 10). Si el usuario no existe se compara contra un hash ficticio, para que la respuesta tarde lo mismo y no revele qué cuentas hay | `Users.kt` |
+| USR-16 Token en cada petición | El login entrega un JWT firmado con `JWT_SECRET` que dura 12 h. Las rutas de pagos exigen `Authorization: Bearer <token>`; sin él responden `401` | `Security.kt`, `Routing.kt` |
+| USR-17 Permisos por rol | Solo el ciudadano sube pagos; el repartidor no ve pagos; el delegado ve todos. Fuera de su rol, `403` | `requireRole()` |
+| PRE-14 Privacidad de los pagos | El usuario sale del token, no del formulario. El ciudadano ve solo sus pagos y sus fotos; la foto de otra persona responde `404` para no confirmar que existe | `Routing.kt` |
+| USR-20 Bloqueo por intentos | 3 contraseñas incorrectas en 15 min bloquean la cuenta 5 min (`429` + `Retry-After`), como piden RFM-NN-01 y RFW-NN-01 del SRS | `LoginAttempts` |
+| SRV-14 Límite de peticiones | 20 logins por minuto por IP. Lee `X-Forwarded-For` porque Render y Railway ponen un proxy delante; sin eso, todos compartirían la IP del proxy | `configureRateLimit()` |
+| SRV-07 CORS | Solo los dominios de `CORS_ORIGINS`, y permite el encabezado `Authorization` | `configureCors()` |
+| Límite de memoria | Ktor deja de leer una foto al pasar 10 MB aunque no venga `Content-Length` (antes aceptaba hasta 50 MB en memoria) | `receiveMultipart(formFieldLimit)` |
+| SRV-12 Registro de peticiones | Una línea por petición: método, ruta, código, duración e IP. Nunca el token ni la contraseña | `configureLogging()` |
+| SRV-13 Chequeo de salud | `GET /salud`: estado, plataforma (`local`, `render` o `railway`) y commit desplegado | `Routing.kt` |
 
-**Permisos en Android** (`AndroidManifest.xml`):
-- `INTERNET` y `usesCleartextTraffic`: para hablar con el backend local por HTTP.
-- `ACCESS_LOCAL_NETWORK`: desde **Android 17** hace falta para llegar a `10.0.2.2`. `MainActivity` lo pide al abrir la app; en el aviso de «dispositivos cercanos» hay que tocar **Permitir**.
+### Variables de entorno del backend
+
+| Variable | ¿Obligatoria en la nube? | Para qué sirve |
+|---|---|---|
+| `PORT` | La pone la plataforma | Puerto de Netty (8081 en la computadora) |
+| `JWT_SECRET` | **Sí** | Clave para firmar los tokens, mínimo 32 caracteres. Sin ella se genera una al azar y todas las sesiones se cierran cada vez que el servidor se reinicia o se duerme. Para crear una: `openssl rand -base64 48` |
+| `CORS_ORIGINS` | Sí, si hay versión web | Dominios del panel web separados por comas, por ejemplo `https://2530412-alt.github.io` |
+| `PAGOS_DIR` | No | Carpeta de las fotos (por defecto `uploads/pagos`, o sea `/app/uploads/pagos` en el contenedor) |
+| `SFTP_*` | No | Copia de las fotos a otro servidor por SFTP (ver abajo) |
 
 ## API del backend
 
-| Método | Ruta | Cuerpo | Respuesta |
-|---|---|---|---|
-| GET | `/` | — | `Logue backend funcionando` |
-| POST | `/login` | `{ "username": "admin", "password": "1234" }` | `200 { "username": "admin", "role": "ADMIN" }` · `401` credenciales incorrectas · `400` campos vacíos |
-| POST | `/pagos-prediales` | `multipart/form-data`: `username`, `folio` (opcional), `foto` (JPEG o PNG, máx. 10 MB) | `201 { id, username, folio, fecha, tipo, tamano }` · `400` datos inválidos · `401` usuario desconocido · `413` foto muy grande · `415` no es JPEG ni PNG |
-| GET | `/pagos-prediales?username=ciudadano` | — | `200` lista de pagos de ese usuario, del más reciente al más antiguo |
-| GET | `/pagos-prediales/{id}/foto` | — | La imagen guardada · `404` si no existe |
+Las rutas marcadas con 🔒 exigen el encabezado `Authorization: Bearer <token>` que entrega `POST /login`.
+
+| Método | Ruta | Quién | Cuerpo | Respuesta |
+|---|---|---|---|---|
+| GET | `/` | Público | — | `Logue backend funcionando` |
+| GET | `/salud` | Público | — | `200 { estado, servicio, plataforma, commit, segundosActivo }` |
+| POST | `/login` | Público | `{ "username": "admin", "password": "1234" }` | `200 { username, role, token, expiresIn }` · `401` credenciales incorrectas · `400` campos vacíos · `429` cuenta bloqueada o demasiados intentos (con `Retry-After`) |
+| POST | `/pagos-prediales` 🔒 | Ciudadano | `multipart/form-data`: `folio` (opcional), `foto` (JPEG o PNG, máx. 10 MB). El usuario sale del token | `201 { id, username, folio, fecha, tipo, tamano }` · `400` datos inválidos · `401` sin sesión · `403` no es ciudadano · `413` foto muy grande · `415` no es JPEG ni PNG |
+| GET | `/pagos-prediales` 🔒 | Ciudadano, delegado | — (el delegado puede agregar `?username=ciudadano`) | `200` pagos del ciudadano del token, o todos si es el delegado · `403` si un ciudadano pide los de otro |
+| GET | `/pagos-prediales/{id}/foto` 🔒 | Dueño, delegado | — | La imagen · `404` si no existe o es de otra persona |
 
 ## Cámara y huella digital (Android)
 
@@ -156,7 +210,7 @@ El **ciudadano** tiene el botón **Registrar pago predial** en su pantalla. El f
 
 1. **Tomar foto del recibo:** abre la cámara **dentro de la app** (CameraX), con vista previa en vivo y botón de captura. La primera vez pide el permiso `CAMERA`; si se niega, la pantalla explica cómo activarlo en Ajustes.
 2. **Enviar pago:** si el teléfono tiene huella registrada, se muestra el diálogo del sistema (`BiometricPrompt`) para confirmar. Si no tiene, se envía sin confirmar y la pantalla lo avisa.
-3. La foto viaja por `POST /pagos-prediales` y el backend la guarda en `backend/uploads/pagos/` (cambia con la variable de entorno `PAGOS_DIR`) como `<id>.jpg` más un `<id>.json` con el folio, la fecha y el usuario.
+3. La foto viaja por `POST /pagos-prediales` con el token de la sesión, y el backend la guarda en `backend/uploads/pagos/` (cambia con la variable de entorno `PAGOS_DIR`) como `<id>.jpg` más un `<id>.json` con el folio, la fecha y el usuario del token.
 
 | Pieza | Archivo |
 |---|---|
@@ -167,7 +221,9 @@ El **ciudadano** tiene el botón **Registrar pago predial** en su pantalla. El f
 | iOS y web | `Sensors.<plataforma>.kt`: por ahora indican que la cámara y la huella no están disponibles |
 | Android | `AndroidManifest.xml` (permiso `CAMERA`), `MainActivity` extiende `FragmentActivity` (lo exige la huella) |
 
-> El almacenamiento es local y de práctica. Todavía no hay sesión con token: el backend confía en el `username` que manda la app. Antes de producción hay que autenticar las peticiones y mover las fotos a una base de datos o almacenamiento en la nube.
+> Desde la Fase 1 cada petición lleva el token y el servidor toma el usuario de ahí (ver «Seguridad»). Las fotos siguen en el
+> disco del servidor: en Render gratuito se borran cada vez que el servicio se duerme o se redespliega. En Railway se
+> conservan si se monta un volumen en `/app/uploads` (ver «Despliegue en la nube y conexión por SSH»). Fase 2: base de datos.
 
 ## Copia de las fotos por SSH (SFTP)
 
@@ -198,6 +254,91 @@ $env:SFTP_HOST_FINGERPRINT = "SHA256:..."
 - Las credenciales **nunca** van en el código ni en la app del teléfono: solo en variables de entorno del backend.
 - Archivos: `RemoteCopy.kt` (conexión y variables) y el uso en `Routing.kt`. Pruebas en `RemoteCopyTest.kt`.
 
+## Despliegue en la nube y conexión por SSH
+
+El backend se despliega con el `Dockerfile` de la raíz, que sirve igual para **Render** (donde está hoy) y para
+**Railway**. Cada `git push` a `main` dispara un despliegue nuevo, y `GET /salud` muestra el commit que quedó
+corriendo, así se comprueba que el servidor tiene la última versión.
+
+| | Render (hoy) | Railway |
+|---|---|---|
+| Entrar al servidor por SSH | No en el plan gratuito | Sí: `railway ssh` |
+| Fotos y datos al reiniciar | Se borran (no hay disco persistente gratis) | Se conservan con un volumen en `/app/uploads` |
+| MySQL para la Fase 2 | No (solo ofrece Postgres) | Sí, como servicio del mismo proyecto |
+| Servidor dormido | Tras 15 min sin uso, ~1 min en despertar | Solo si se activa el modo Serverless |
+
+Por eso, para la práctica de SSH y para la Fase 2 conviene mudar el backend a Railway. Revisen los créditos y
+límites del plan en railway.com/pricing antes de crear el proyecto.
+
+### 1. Subir el código por SSH (`git push`)
+
+En la computadora, una sola vez:
+
+```
+ssh-keygen -t ed25519 -C "tu-correo@upt.edu.mx"      (Enter en todo; crea ~/.ssh/id_ed25519 y id_ed25519.pub)
+```
+
+Copia el contenido de `id_ed25519.pub` en GitHub → **Settings → SSH and GPG keys → New SSH key**. Después:
+
+```
+ssh -T git@github.com                                         debe responder «You've successfully authenticated»
+git remote set-url origin git@github.com:2530412-alt/logue.git
+git remote -v                                                 las dos líneas deben iniciar con git@github.com:
+git push                                                      sube el código por SSH y dispara el despliegue
+```
+
+### 2. Crear el servicio en Railway
+
+1. **New Project → Deploy from GitHub repo → logue.** No hace falta Root Directory: el `Dockerfile` está en la raíz y
+   compila la carpeta `backend/`. Si Railway no lo detecta, agrega la variable `RAILWAY_DOCKERFILE_PATH=Dockerfile`.
+2. **Variables:** `JWT_SECRET` (resultado de `openssl rand -base64 48`) y `CORS_ORIGINS=https://2530412-alt.github.io`.
+   `PORT` la pone Railway.
+3. **Volumen** montado en `/app/uploads`, para que las fotos de los pagos no se borren con cada despliegue.
+4. **Settings → Networking → Generate Domain** da la dirección pública (`https://…up.railway.app`). Ponla en
+   `SERVIDOR_NUBE` de `frontend/shared/src/commonMain/kotlin/com/logue/frontend/Config.kt` y en
+   `Config.js.kt`/`Config.wasmJs.kt` si la web también se muda.
+5. Comprueba en el navegador `https://…up.railway.app/salud`: debe decir `"plataforma":"railway"` y el commit.
+
+### 3. Entrar al servidor por SSH (`railway ssh`)
+
+```
+npm i -g @railway/cli          en Windows usa npm.cmd y railway.cmd si PowerShell bloquea los scripts
+railway login
+railway link                   elige el proyecto, el entorno y el servicio del backend
+railway ssh                    la primera vez registra tu llave y pide aceptar la huella de ssh.railway.com
+```
+
+Si la sesión se cierra en cuanto se abre, el contenedor estaba dormido: abre `/salud` en el navegador y vuelve a
+intentar. Dentro del contenedor (`root@…:/app`):
+
+```
+ls -la                                   app.jar y la carpeta uploads
+ls uploads/pagos                         fotos de los pagos (<id>.jpg y <id>.json)
+java -version                            Temurin 21, el de la imagen, no el de tu computadora
+cat /proc/1/cmdline | tr '\0' ' '        java -XX:MaxRAMPercentage=75 -jar app.jar
+curl -s localhost:$PORT/salud            el servidor respondiendo desde la misma máquina
+java -Xmx64m -jar app.jar probar http://localhost:$PORT     pruebas automáticas desde dentro del servidor
+exit
+```
+
+Desde la computadora, `railway logs` muestra una línea por petición (método, ruta, código, duración e IP), sin tokens
+ni contraseñas.
+
+### 4. Pruebas sobre el servidor alojado
+
+`Probador.kt` manda 19 casos de prueba al servidor ya desplegado (login de los tres roles, bloqueo, token, permisos,
+subida de foto, CORS) y tres series de rendimiento, y guarda la tabla en un CSV para el reporte:
+
+```
+cd backend
+gradlew.bat run --args="probar https://tu-servicio.up.railway.app"
+```
+
+Usa los usuarios de prueba (contraseña `1234`, o la que se pase como tercer argumento), sube una foto de prueba con el
+folio `PRUEBA-AUTOMATICA` y el caso de bloqueo usa un usuario inventado, así que no bloquea ninguna cuenta real. Hace
+menos de 20 logins: si se corre dos veces seguidas, espera un minuto por el límite por IP. Si falla PS-19, falta
+definir `CORS_ORIGINS` en el servidor.
+
 ## Cómo ejecutarlo
 
 **1. Backend.** Abrir la carpeta `backend` en Android Studio o IntelliJ IDEA y ejecutar `main.kt`. También se puede desde la terminal:
@@ -208,16 +349,18 @@ gradlew.bat run        (Windows)
 ./gradlew run          (macOS / Linux)
 ```
 
-Cuando aparezca `Responding at http://...:8081`, el servidor está listo. La barra de Gradle se queda en «EXECUTING» mientras el servidor esté encendido; es normal. Para comprobarlo, abrir http://localhost:8081 en el navegador: debe mostrar «Logue backend funcionando».
+Cuando aparezca `Responding at http://...:8081`, el servidor está listo. La barra de Gradle se queda en «EXECUTING» mientras el servidor esté encendido; es normal. Para comprobarlo, abrir http://localhost:8081/salud en el navegador. En local el aviso «JWT_SECRET no está definido» es normal.
 
 **2. Frontend.** Abrir la carpeta `frontend` en Android Studio, elegir **androidApp** y un emulador, y presionar Run.
-- **Emulador:** ya viene configurado con `10.0.2.2:8081`. En Android 17 hay que permitir el acceso a «dispositivos cercanos».
-- **Celular físico (USB):** ejecutar `adb reverse tcp:8081 tcp:8081` y cambiar `Config.android.kt` a `http://localhost:8081`.
+- **Sin configurar nada**, la app usa el servidor en la nube.
+- **Backend local con el emulador:** en `frontend/local.properties` agrega `SERVIDOR_URL=local`. En Android 17 hay que permitir el acceso a «dispositivos cercanos».
+- **Backend local con celular por USB:** ejecuta `adb reverse tcp:8081 tcp:8081` y usa `SERVIDOR_URL=http://localhost:8081`.
 - **Versión web:** `gradlew.bat :webApp:wasmJsBrowserDevelopmentRun` dentro de `frontend`.
 
 **3. Pruebas**
-- `backend`: `gradlew.bat test`
-- `frontend`: `gradlew.bat :shared:testAndroidHostTest` (incluye las pruebas de Crear cuenta y Recuperar contraseña)
+- `backend`: `gradlew.bat test` (36 pruebas: login, token, permisos, bloqueo, fotos, SFTP, CORS y salud)
+- `frontend`: `gradlew.bat :shared:testAndroidHostTest` (18 pruebas: Crear cuenta, Recuperar contraseña y dirección del servidor)
+- Servidor desplegado: `gradlew.bat run --args="probar https://…"` (ver «Pruebas sobre el servidor alojado»)
 
 ## Siguientes etapas (según la propuesta de AquaGo)
 

@@ -175,7 +175,7 @@ fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
             containerColor = AppColors.Accent,
             contentColor = AppColors.OnAccent
         ),
-        modifier = Modifier.fillMaxWidth().height(54.dp)
+        modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
     ) {
         Text(text, fontWeight = FontWeight.Bold)
     }
