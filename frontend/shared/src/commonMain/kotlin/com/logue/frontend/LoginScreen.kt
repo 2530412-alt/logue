@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -15,24 +16,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
  * Pantalla de inicio de sesión. Llama a [onLoggedIn] con los datos de la sesión si el login es correcto.
  * [onCreateAccount] y [onForgotPassword] abren las pantallas de Crear cuenta y Recuperar contraseña.
+ * [initialMessage] se muestra al abrir la pantalla (por ejemplo, «Tu sesión expiró»).
  */
 @Composable
 fun LoginScreen(
     onLoggedIn: (LoginResponse) -> Unit,
     onCreateAccount: () -> Unit = {},
-    onForgotPassword: () -> Unit = {}
+    onForgotPassword: () -> Unit = {},
+    initialMessage: String? = null
 ) {
-    var user by remember { mutableStateOf("") }
+    // rememberSaveable: el usuario escrito no se borra al girar el teléfono o cambiar el tamaño de letra.
+    // La contraseña se queda en remember a propósito, para no guardarla en el estado del sistema.
+    var user by rememberSaveable { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var showPass by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf(initialMessage) }
     var loading by remember { mutableStateOf(false) }
+    var waking by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // Despierta al servidor mientras el usuario escribe (API-08). Render gratuito tarda ~1 min en despertar.
+    LaunchedEffect(Unit) { despertarServidor() }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = AppColors.Accent,
@@ -104,11 +114,17 @@ fun LoginScreen(
                         scope.launch {
                             loading = true
                             error = null
-                            when (val result = login(user, pass)) {
+                            // Si tarda más de 4 s, casi seguro el servidor estaba dormido: se avisa en lugar de parecer trabado
+                            val aviso = launch { delay(4_000); waking = true }
+                            val result = login(user, pass)
+                            aviso.cancel()
+                            waking = false
+                            when (result) {
                                 is LoginResult.Success -> onLoggedIn(result.session)
                                 LoginResult.InvalidCredentials -> error = "Usuario o contraseña incorrectos"
+                                is LoginResult.Locked -> error = lockedMessage(result.retryAfterSeconds)
                                 LoginResult.ServerError -> error = "El servidor tuvo un problema. Intenta de nuevo"
-                                LoginResult.NetworkError -> error = "No se pudo conectar con el servidor. ¿Está encendido el backend?"
+                                LoginResult.NetworkError -> error = MENSAJE_SIN_CONEXION
                             }
                             loading = false
                         }
@@ -120,13 +136,28 @@ fun LoginScreen(
                     containerColor = AppColors.Accent,
                     contentColor = AppColors.OnAccent
                 ),
-                modifier = Modifier.fillMaxWidth().height(54.dp)
+                modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
             ) {
-                Text(if (loading) "Entrando..." else "Iniciar sesión", fontWeight = FontWeight.Bold)
+                Text(
+                    when {
+                        waking -> "Despertando el servidor..."
+                        loading -> "Entrando..."
+                        else -> "Iniciar sesión"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            if (waking) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "La primera conexión después de un rato puede tardar hasta un minuto.",
+                    color = AppColors.TextMuted,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
             error?.let {
                 Spacer(Modifier.height(10.dp))
-                Text(it, color = AppColors.Red, style = MaterialTheme.typography.bodySmall)
+                Text(it, color = AppColors.Red, style = MaterialTheme.typography.bodyMedium)
             }
         }
 

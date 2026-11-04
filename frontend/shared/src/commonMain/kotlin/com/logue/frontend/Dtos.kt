@@ -6,9 +6,12 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class LoginRequest(val username: String, val password: String)
 
-/** Respuesta del backend cuando las credenciales son correctas. */
+/**
+ * Respuesta del backend cuando las credenciales son correctas. El [token] se manda en cada
+ * petición como `Authorization: Bearer <token>` (USR-16); dura [expiresIn] segundos.
+ */
 @Serializable
-data class LoginResponse(val username: String, val role: String)
+data class LoginResponse(val username: String, val role: String, val token: String, val expiresIn: Long = 0)
 
 /** Respuesta del backend al guardar la foto de un pago predial (`POST /pagos-prediales`). */
 @Serializable
@@ -21,7 +24,10 @@ data class PagoPredialResponse(
     val tamano: Long
 )
 
-/** Roles que devuelve el backend (deben coincidir con `users.json`). */
+/**
+ * Roles que devuelve el backend (deben coincidir con `users.json`).
+ * En el SRS: CIUDADANO = Ciudadano, OPERADOR = Repartidor, ADMIN = Delegado.
+ */
 object Roles {
     const val CIUDADANO = "CIUDADANO"
     const val OPERADOR = "OPERADOR"

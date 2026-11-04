@@ -5,6 +5,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -15,6 +17,9 @@ import kotlinx.coroutines.launch
 /** Pasos de la recuperación de contraseña. */
 enum class RecoverStep { ACCOUNT, CODE, NEW_PASSWORD, DONE }
 
+/** Guarda el paso por su nombre para que sobreviva al giro del teléfono en todas las plataformas. */
+private val RecoverStepSaver = Saver<RecoverStep, String>(save = { it.name }, restore = { RecoverStep.valueOf(it) })
+
 /**
  * Recuperar contraseña (pantalla DEMOSTRATIVA) en 3 pasos:
  * 1) usuario o teléfono, 2) código que llega por SMS, 3) contraseña nueva.
@@ -24,9 +29,9 @@ enum class RecoverStep { ACCOUNT, CODE, NEW_PASSWORD, DONE }
  */
 @Composable
 fun RecoverPasswordScreen(onBack: () -> Unit) {
-    var step by remember { mutableStateOf(RecoverStep.ACCOUNT) }
-    var account by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
+    var step by rememberSaveable(stateSaver = RecoverStepSaver) { mutableStateOf(RecoverStep.ACCOUNT) }
+    var account by rememberSaveable { mutableStateOf("") }
+    var code by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }

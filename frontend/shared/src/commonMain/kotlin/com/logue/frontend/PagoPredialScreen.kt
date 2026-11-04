@@ -6,6 +6,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -14,10 +15,12 @@ import kotlinx.coroutines.launch
 /**
  * Registro de un pago predial: el ciudadano fotografía su recibo, confirma con su huella
  * (si el teléfono la tiene) y la foto se envía al backend, que la guarda.
+ * [onSessionExpired] se llama si el servidor responde 401 (el token venció).
  */
 @Composable
-fun PagoPredialScreen(session: LoginResponse, onBack: () -> Unit) {
-    var folio by remember { mutableStateOf("") }
+fun PagoPredialScreen(session: LoginResponse, onBack: () -> Unit, onSessionExpired: () -> Unit = onBack) {
+    var folio by rememberSaveable { mutableStateOf("") }
+    // La foto se queda en remember: varios MB no caben en el estado que Android guarda al girar la pantalla
     var foto by remember { mutableStateOf<ByteArray?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
@@ -45,7 +48,7 @@ fun PagoPredialScreen(session: LoginResponse, onBack: () -> Unit) {
         scope.launch {
             sending = true
             error = null
-            when (val result = subirPagoPredial(session.username, folio, bytes)) {
+            when (val result = subirPagoPredial(session.token, folio, bytes)) {
                 is UploadResult.Success -> {
                     saved = result.pago
                     foto = null
@@ -53,8 +56,10 @@ fun PagoPredialScreen(session: LoginResponse, onBack: () -> Unit) {
                 }
                 UploadResult.TooLarge -> error = "La foto pesa más de 10 MB. Toma otra más ligera"
                 UploadResult.NotImage -> error = "El archivo no es una imagen válida"
+                UploadResult.SessionExpired -> onSessionExpired()
+                UploadResult.Forbidden -> error = "Tu cuenta no puede registrar pagos prediales"
                 UploadResult.ServerError -> error = "El servidor tuvo un problema. Intenta de nuevo"
-                UploadResult.NetworkError -> error = "No se pudo conectar con el servidor. ¿Está encendido el backend?"
+                UploadResult.NetworkError -> error = MENSAJE_SIN_CONEXION
             }
             sending = false
         }
@@ -161,7 +166,7 @@ private fun SecondaryButton(text: String, onClick: () -> Unit, enabled: Boolean 
         enabled = enabled,
         shape = CircleShape,
         colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.Accent),
-        modifier = Modifier.fillMaxWidth().height(54.dp)
+        modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
     ) {
         Text(text, fontWeight = FontWeight.Bold)
     }

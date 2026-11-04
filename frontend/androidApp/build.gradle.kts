@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -22,6 +23,18 @@ dependencies {
     debugImplementation(libs.compose.uiTooling)
 }
 
+// ---- VARIABLE DE ENTORNO SERVIDOR_URL (API-07) ----
+// Se lee de frontend/local.properties, que NO se sube a GitHub (cada quien tiene su propio valor).
+// Si no está ahí, también se acepta como variable de entorno del sistema. Vacía = servidor en la nube.
+// Valores: "local" (backend en la PC, visto desde el emulador) o una URL completa. Ver local.properties.ejemplo.
+val propiedadesLocales = Properties().apply {
+    val archivo = rootProject.file("local.properties")
+    if (archivo.exists()) archivo.inputStream().use { load(it) }
+}
+
+fun variable(clave: String): String =
+    propiedadesLocales.getProperty(clave) ?: providers.environmentVariable(clave).orNull ?: ""
+
 android {
     namespace = "com.logue.frontend"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -32,6 +45,9 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
+
+        // Llega al código como BuildConfig.SERVIDOR_URL; MainActivity se la pasa a configurarServidor()
+        buildConfigField("String", "SERVIDOR_URL", "\"${variable("SERVIDOR_URL")}\"")
     }
     packaging {
         resources {
@@ -53,5 +69,6 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true // genera la clase BuildConfig
     }
 }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Versión release: solo HTTPS (RNF-01). Antes el manifiesto tenía usesCleartextTraffic="true",
+  que dejaba viajar sin cifrar cualquier petición, incluida la contraseña.
+  La versión debug usa el archivo de src/debug/res/xml, que sí permite HTTP para el backend local.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

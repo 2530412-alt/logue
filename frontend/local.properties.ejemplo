@@ -1,0 +1,25 @@
+# ============================================================
+#  VARIABLES DE ENTORNO DE AQUAGO (frontend)
+# ============================================================
+#
+#  Android Studio crea local.properties con sdk.dir. Para usar estas
+#  variables, copia la línea que necesites a TU local.properties.
+#  NUNCA subas local.properties al repositorio: está en .gitignore,
+#  porque cada integrante tiene su propia ruta del SDK y su propia IP.
+#
+#  androidApp/build.gradle.kts la lee y la entrega a la app como
+#  BuildConfig.SERVIDOR_URL (ver Config.kt).
+# ============================================================
+
+# Ruta del SDK de Android (la escribe Android Studio)
+# sdk.dir=C\:\\Users\\tuusuario\\AppData\\Local\\Android\\Sdk
+
+# Sin SERVIDOR_URL la app usa el servidor en la nube (HTTPS). Es lo normal.
+#  - Backend en tu PC, probando en el EMULADOR (usa http://10.0.2.2:8081):
+# SERVIDOR_URL=local
+#  - Backend en tu PC, celular por cable con "adb reverse tcp:8081 tcp:8081":
+# SERVIDOR_URL=http://localhost:8081
+#  - Backend en tu PC, celular en la misma red Wi-Fi (IP de tu PC, comando ipconfig):
+# SERVIDOR_URL=http://192.168.1.70:8081
+#  - Otro servidor en la nube (por ejemplo Railway):
+# SERVIDOR_URL=https://tu-servicio.up.railway.app

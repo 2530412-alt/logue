@@ -13,12 +13,14 @@ import androidx.fragment.app.FragmentActivity
 // FragmentActivity (que ya es una ComponentActivity) porque BiometricPrompt la necesita
 class MainActivity : FragmentActivity() {
 
-    // Si el usuario niega el permiso, el login dirá que no se pudo conectar con el servidor
+    // Solo hace falta para el backend local. Si el usuario lo niega, el login dirá que no se pudo conectar
     private val pedirRedLocal = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // Servidor de local.properties (SERVIDOR_URL). Vacío = la nube; "local" = 10.0.2.2:8081 (emulador)
+        configurarServidor(BuildConfig.SERVIDOR_URL)
         pedirPermisoRedLocal()
 
         setContent {
