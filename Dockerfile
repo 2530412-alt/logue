@@ -13,7 +13,8 @@ RUN chmod +x gradlew && ./gradlew buildFatJar --no-daemon --console=plain
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /app/build/libs/*-all.jar app.jar
-# Las fotos van a /app/uploads/pagos (PAGOS_DIR). En Railway se monta ahí un volumen para que no se borren.
+# Las fotos (/app/uploads/pagos, PAGOS_DIR), las cuentas y las solicitudes (/app/uploads, DATA_DIR) se guardan aquí.
+# En Railway se monta un volumen en /app/uploads para que nada se borre al reiniciar.
 RUN mkdir -p /app/uploads/pagos
 # La plataforma asigna el puerto en PORT; 8081 es el de la computadora.
 EXPOSE 8081

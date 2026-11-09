@@ -36,7 +36,11 @@ fun Application.configureRouting(
     pagos: PagoStore,
     remote: RemoteCopier?,
     tokens: TokenService,
-    attempts: LoginAttempts
+    attempts: LoginAttempts,
+    recovery: RecoveryCodes = RecoveryCodes(),
+    codeSender: CodeSender = LogCodeSender(),
+    solicitudes: SolicitudStore = defaultSolicitudStore(),
+    clock: java.time.Clock = java.time.Clock.systemUTC()
 ) {
     routing {
         get("/") {
@@ -57,7 +61,8 @@ fun Application.configureRouting(
         }
 
         // POST /login  ->  200 + {username, role, token, expiresIn} | 400 solicitud inválida
-        //                  401 credenciales incorrectas | 429 cuenta bloqueada o demasiadas peticiones
+        //                  401 credenciales incorrectas | 403 cuenta en revisión o desactivada
+        //                  429 cuenta bloqueada o demasiadas peticiones
         rateLimit(ACCOUNTS_LIMIT) {
             post("/login") {
                 val req = try {
@@ -95,12 +100,26 @@ fun Application.configureRouting(
                 }
 
                 attempts.registerSuccess(username)
-                call.respond(LoginResponse(user.username, user.role, tokens.create(user), tokens.validity.seconds))
+                // Solo después de comprobar la contraseña: así no se revela el estado de cuentas ajenas (USR-11)
+                when (user.estado) {
+                    EstadoCuenta.EN_REVISION ->
+                        call.respond(HttpStatusCode.Forbidden, "Tu cuenta está en revisión. Te avisaremos cuando el delegado valide tu comprobante")
+                    EstadoCuenta.INACTIVA ->
+                        call.respond(HttpStatusCode.Forbidden, "Tu cuenta está desactivada. Comunícate con el delegado")
+                    else ->
+                        call.respond(LoginResponse(user.username, user.role, tokens.create(user), tokens.validity.seconds))
+                }
             }
         }
 
+        // Registro y recuperación de contraseña: públicos, con el mismo límite de peticiones que el login
+        cuentasPublicas(users, pagos, remote, recovery, codeSender)
+
         // Todo lo de aquí adentro exige "Authorization: Bearer <token>" (USR-16); sin token responde 401
         authenticate(AUTH_JWT) {
+
+            cuentasAutenticadas(users)
+            solicitudesRoutes(solicitudes, clock)
 
             // POST /pagos-prediales (multipart: folio opcional, foto). El usuario sale del token, no del formulario.
             //   -> 201 + PagoPredial | 400 datos inválidos | 401 sin sesión | 403 no es ciudadano
@@ -151,21 +170,8 @@ fun Application.configureRouting(
                             call.respond(HttpStatusCode.UnsupportedMediaType, "La foto debe ser JPEG o PNG")
                         } else {
                             val pago = pagos.save(username, folio, tipo, foto)
-                            // El disco local es la copia principal. Si hay SFTP configurado, la copia al
-                            // servidor remoto se hace aparte para no hacer esperar al usuario ni fallar el pago.
-                            remote?.let { copier ->
-                                val archivos = pagos.files(pago.id)
-                                val app = call.application
-                                app.launch(Dispatchers.IO) {
-                                    for (archivo in archivos) {
-                                        try {
-                                            copier.copy(archivo, archivo.name)
-                                        } catch (e: Exception) {
-                                            app.log.warn("No se pudo copiar ${archivo.name} por SFTP: ${e.message}")
-                                        }
-                                    }
-                                }
-                            }
+                            // El disco local es la copia principal; la copia por SFTP se hace aparte
+                            call.copiarARemoto(pagos, remote, pago.id)
                             call.respond(HttpStatusCode.Created, pago)
                         }
                     }
@@ -199,6 +205,25 @@ fun Application.configureRouting(
                     val (pago, file) = found
                     call.respondBytes(file.readBytes(), ContentType.parse(pago.tipo))
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Si hay SFTP configurado, copia la foto y sus datos al servidor remoto en segundo plano, para no
+ * hacer esperar al usuario ni fallar el pago si el servidor remoto no responde.
+ */
+fun ApplicationCall.copiarARemoto(pagos: PagoStore, remote: RemoteCopier?, pagoId: String) {
+    val copier = remote ?: return
+    val archivos = pagos.files(pagoId)
+    val app = application
+    app.launch(Dispatchers.IO) {
+        for (archivo in archivos) {
+            try {
+                copier.copy(archivo, archivo.name)
+            } catch (e: Exception) {
+                app.log.warn("No se pudo copiar ${archivo.name} por SFTP: ${e.message}")
             }
         }
     }
