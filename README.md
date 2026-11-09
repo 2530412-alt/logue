@@ -388,6 +388,8 @@ Cuando aparezca `Responding at http://...:8081`, el servidor está listo. La bar
 - **Delegado (web):** panel de solicitudes, validación del pago predial, asignación de citas con folio y reportes.
 - Una sola base de datos compartida por las aplicaciones de escritorio, web y móvil.
 
+Prueba manual del 09/11/2026 en Android: registro, perfil e historial de pagos funcionando.
+
 ## Repositorio
 
 https://github.com/2530412-alt/logue
