@@ -18,13 +18,17 @@ fun Application.rootModule() = aquaGoModule()
  * reloj de los tokens, etc.), así las pruebas no dependen de archivos ni de variables de entorno.
  */
 fun Application.aquaGoModule(
-    users: UserRepository = JsonUserRepository(loadUsers()),
+    users: UserRepository = defaultUserRepository(),
     pagos: PagoStore = defaultPagoStore(),
     remote: RemoteCopier? = loadRemoteCopier(),
     tokens: TokenService = TokenService.fromEnvironment(),
     attempts: LoginAttempts = LoginAttempts(),
     corsOrigins: List<String> = corsOriginsFromEnvironment(),
-    loginsPerMinute: Int = 20
+    loginsPerMinute: Int = 20,
+    recovery: RecoveryCodes = RecoveryCodes(),
+    codeSender: CodeSender = LogCodeSender(),
+    solicitudes: SolicitudStore = defaultSolicitudStore(),
+    clock: java.time.Clock = java.time.Clock.systemUTC()
 ) {
     configureLogging()
     configureCors(corsOrigins)
@@ -32,7 +36,7 @@ fun Application.aquaGoModule(
     configureErrors()
     configureSecurity(tokens)
     configureRateLimit(loginsPerMinute)
-    configureRouting(users, pagos, remote, tokens, attempts)
+    configureRouting(users, pagos, remote, tokens, attempts, recovery, codeSender, solicitudes, clock)
 }
 
 /**
@@ -60,6 +64,8 @@ fun Application.configureCors(origins: List<String>) {
     install(CORS) {
         allowMethod(HttpMethod.Get)
         allowMethod(HttpMethod.Post)
+        // PATCH: editar el perfil y activar cuentas (USR-21, USR-11)
+        allowMethod(HttpMethod.Patch)
         allowMethod(HttpMethod.Options)
         allowHeader(HttpHeaders.ContentType)
         // Sin esto el navegador no deja mandar el token (Authorization: Bearer ...)

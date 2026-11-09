@@ -3,6 +3,7 @@ package com.logue.frontend
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** Pruebas de las reglas de Crear cuenta y Recuperar contraseña. */
 class AuthValidationTest {
@@ -33,8 +34,15 @@ class AuthValidationTest {
         assertEquals("Adjunta tu comprobante de pago predial", registro(comprobante = false))
 
     @Test
-    fun registroNoAceptaUsuarioExistente() =
-        assertEquals("Ese usuario ya existe, elige otro", registro(usuario = "Admin"))
+    fun registroPideUsuarioDeAlMenos4Caracteres() =
+        assertEquals("El usuario debe tener al menos 4 caracteres", registro(usuario = "abc"))
+
+    @Test
+    fun elUsuarioRepetidoLoResponde409ElServidorYNoUnaListaFijaEnLaApp() {
+        // USR-10: antes la app comparaba contra los tres usuarios de prueba; ahora cualquier nombre pasa
+        // la validación local y el servidor responde 409 si ya existe (CuentasTest en el backend).
+        assertNull(registro(usuario = "Admin"))
+    }
 
     @Test
     fun registroRevisaQueLasContrasenasCoincidan() =
@@ -53,10 +61,41 @@ class AuthValidationTest {
     }
 
     @Test
-    fun codigoDeRecuperacion() {
-        assertNull(validateRecoveryCode(DEMO_RECOVERY_CODE))
+    fun codigoDeRecuperacionSoloRevisaQueSean6Digitos() {
+        assertNull(validateRecoveryCode("123456"))
+        assertNull(validateRecoveryCode("000000"))
         assertEquals("El código tiene 6 dígitos", validateRecoveryCode("12"))
-        assertEquals("Código incorrecto. Revisa el SMS e intenta de nuevo", validateRecoveryCode("000000"))
+        assertEquals("El código tiene 6 dígitos", validateRecoveryCode("12345a"))
+    }
+
+    private val perfil = Perfil("ciudadano", Roles.CIUDADANO, "Brenda Martínez", "7711234567", "Hidalgo 12", "Centro", "ACTIVA")
+
+    @Test
+    fun perfilSinCambiosNoEnviaNada() {
+        val cambio = profileChange(perfil, " Brenda Martínez ", "7711234567", "Hidalgo 12", "Centro")
+        assertTrue(cambio.isEmpty())
+        assertNull(validateProfileChange(cambio))
+    }
+
+    @Test
+    fun perfilEnviaSoloLoQueCambio() {
+        val cambio = profileChange(perfil, "Brenda Martínez", "7711234567", "Hidalgo 12", " Reforma ")
+        assertEquals(PerfilCambio(colonia = "Reforma"), cambio)
+    }
+
+    @Test
+    fun perfilRevisaLosCamposQueCambian() {
+        assertEquals("Escribe tu nombre completo", validateProfileChange(PerfilCambio(nombre = " ")))
+        assertEquals("El teléfono debe tener 10 dígitos", validateProfileChange(PerfilCambio(telefono = "771")))
+        assertEquals("Escribe tu colonia o localidad", validateProfileChange(PerfilCambio(colonia = "")))
+        assertNull(validateProfileChange(PerfilCambio(telefono = "7715550000")))
+    }
+
+    @Test
+    fun etiquetasDeRolYDeEstadoDeCuenta() {
+        assertEquals("Administrador", etiquetaRol(Roles.ADMIN))
+        assertEquals("En revisión", etiquetaEstadoCuenta("EN_REVISION"))
+        assertEquals("Desactivada", etiquetaEstadoCuenta("INACTIVA"))
     }
 
     @Test

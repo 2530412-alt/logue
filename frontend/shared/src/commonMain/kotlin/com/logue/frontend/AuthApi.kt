@@ -6,6 +6,7 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.*
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
@@ -33,6 +34,8 @@ sealed interface LoginResult {
     data object InvalidCredentials : LoginResult
     /** 429: la cuenta se bloqueó por intentos fallidos o se pasó el límite de peticiones (USR-20). */
     data class Locked(val retryAfterSeconds: Long?) : LoginResult
+    /** 403: la cuenta está en revisión (USR-11) o desactivada. [mensaje] viene del servidor. */
+    data class AccountBlocked(val mensaje: String) : LoginResult
     data object ServerError : LoginResult
     data object NetworkError : LoginResult
 }
@@ -62,6 +65,7 @@ suspend fun login(username: String, password: String): LoginResult = try {
         HttpStatusCode.OK -> LoginResult.Success(res.body())
         HttpStatusCode.Unauthorized -> LoginResult.InvalidCredentials
         HttpStatusCode.TooManyRequests -> LoginResult.Locked(res.headers[HttpHeaders.RetryAfter]?.toLongOrNull())
+        HttpStatusCode.Forbidden -> LoginResult.AccountBlocked(res.bodyAsText())
         else -> LoginResult.ServerError
     }
 } catch (e: CancellationException) {

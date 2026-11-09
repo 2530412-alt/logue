@@ -189,6 +189,8 @@ para no guardarla en el estado del sistema, y la foto porque varios MB no caben 
 | `JWT_SECRET` | **Sí** | Clave para firmar los tokens, mínimo 32 caracteres. Sin ella se genera una al azar y todas las sesiones se cierran cada vez que el servidor se reinicia o se duerme. Para crear una: `openssl rand -base64 48` |
 | `CORS_ORIGINS` | Sí, si hay versión web | Dominios del panel web separados por comas, por ejemplo `https://2530412-alt.github.io` |
 | `PAGOS_DIR` | No | Carpeta de las fotos (por defecto `uploads/pagos`, o sea `/app/uploads/pagos` en el contenedor) |
+| `DATA_DIR` | No | Carpeta de las cuentas (`users.json`) y las solicitudes (`solicitudes.json`); por defecto `uploads`. Si ya existe `users.json` aquí, se usa en lugar del de `resources`. Para que nada se borre al reiniciar, monta el volumen en `/app/uploads` |
+| `APP_TZ` | No | Zona horaria para «hoy» en `/entregas` (por defecto `America/Mexico_City`) |
 | `SFTP_*` | No | Copia de las fotos a otro servidor por SFTP (ver abajo) |
 
 ## API del backend
@@ -203,6 +205,14 @@ Las rutas marcadas con 🔒 exigen el encabezado `Authorization: Bearer <token>`
 | POST | `/pagos-prediales` 🔒 | Ciudadano | `multipart/form-data`: `folio` (opcional), `foto` (JPEG o PNG, máx. 10 MB). El usuario sale del token | `201 { id, username, folio, fecha, tipo, tamano }` · `400` datos inválidos · `401` sin sesión · `403` no es ciudadano · `413` foto muy grande · `415` no es JPEG ni PNG |
 | GET | `/pagos-prediales` 🔒 | Ciudadano, delegado | — (el delegado puede agregar `?username=ciudadano`) | `200` pagos del ciudadano del token, o todos si es el delegado · `403` si un ciudadano pide los de otro |
 | GET | `/pagos-prediales/{id}/foto` 🔒 | Dueño, delegado | — | La imagen · `404` si no existe o es de otra persona |
+| POST | `/registro` | Público | `multipart/form-data`: `nombre`, `telefono` (10 dígitos), `calle`, `colonia`, `usuario`, `contrasena`, `folio` (opcional), `foto` del comprobante (JPEG o PNG, máx. 10 MB) | `201 { username, estado: "EN_REVISION", pagoId }` · `400` dato inválido · `409` usuario o teléfono ya registrado · `413` · `415`. La cuenta no puede entrar hasta que el delegado la active |
+| POST | `/recuperacion/solicitar` | Público | `{ "cuenta": "usuario o teléfono" }` | `202` siempre (no revela si la cuenta existe) · `400` dato inválido. El código de 6 dígitos sale por `CodeSender` (hoy, el registro del servidor; SMS es NOT-05) |
+| POST | `/recuperacion/confirmar` | Público | `{ "cuenta", "codigo", "contrasena" }` | `204` contraseña cambiada · `400` código incorrecto, vencido (10 min) o agotado (5 intentos) |
+| GET | `/usuarios/yo` 🔒 | Todos | — | `200 { username, role, nombre, telefono, calle, colonia, estado }` |
+| PATCH | `/usuarios/yo` 🔒 | Todos | `{ nombre?, telefono?, calle?, colonia? }` (solo lo que cambia) | `200` perfil · `400` dato inválido · `409` teléfono de otra cuenta |
+| PATCH | `/usuarios/{username}/estado` 🔒 | Delegado | `{ "estado": "ACTIVA" }` (`ACTIVA`, `EN_REVISION` o `INACTIVA`) | `200` perfil · `400` · `403` no es delegado · `404` |
+| GET | `/solicitudes` 🔒 | Ciudadano, delegado | — | `200 [ { id, username, dia, hora, capacidadLitros, domicilio, colonia, estado, repartidor } ]`: las del ciudadano, o todas si es el delegado · `403` repartidor |
+| GET | `/entregas` 🔒 | Repartidor | — (`?dia=AAAA-MM-DD`, por omisión hoy) | `200` su ruta del día, ordenada por hora · `400` día inválido · `403` otro rol |
 
 ## Cámara y huella digital (Android)
 
@@ -358,8 +368,8 @@ Cuando aparezca `Responding at http://...:8081`, el servidor está listo. La bar
 - **Versión web:** `gradlew.bat :webApp:wasmJsBrowserDevelopmentRun` dentro de `frontend`.
 
 **3. Pruebas**
-- `backend`: `gradlew.bat test` (36 pruebas: login, token, permisos, bloqueo, fotos, SFTP, CORS y salud)
-- `frontend`: `gradlew.bat :shared:testAndroidHostTest` (18 pruebas: Crear cuenta, Recuperar contraseña y dirección del servidor)
+- `backend`: `gradlew.bat test` (67 pruebas: login, token, permisos, bloqueo, fotos, SFTP, CORS, salud, cuentas, recuperación, perfil y solicitudes)
+- `frontend`: `gradlew.bat :shared:testAndroidHostTest` (35 pruebas: Crear cuenta, Recuperar contraseña, perfil, solicitudes y dirección del servidor)
 - Servidor desplegado: `gradlew.bat run --args="probar https://…"` (ver «Pruebas sobre el servidor alojado»)
 
 ## Siguientes etapas (según la propuesta de AquaGo)

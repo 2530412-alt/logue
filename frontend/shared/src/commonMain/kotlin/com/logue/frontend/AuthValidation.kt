@@ -6,15 +6,12 @@ package com.logue.frontend
  * Cada una devuelve el mensaje del primer error, o `null` si todo está bien.
  */
 
-/** Código que acepta la recuperación de contraseña mientras sea demostrativa. */
-const val DEMO_RECOVERY_CODE = "123456"
-
-/** Usuarios que ya existen en el backend (users.json). Sirve para avisar en el registro de prueba. */
-val EXISTING_USERNAMES = setOf("ciudadano", "operador", "admin")
-
 const val MIN_PASSWORD_LENGTH = 6
 
-/** Registro del ciudadano: revisa los campos en el mismo orden en que aparecen en la pantalla. */
+/**
+ * Registro del ciudadano: revisa los campos en el mismo orden en que aparecen en la pantalla.
+ * Que el usuario ya exista lo responde el servidor (409), porque solo él conoce las cuentas (USR-10).
+ */
 fun validateRegistration(
     fullName: String,
     phone: String,
@@ -32,7 +29,6 @@ fun validateRegistration(
     !hasPropertyTaxReceipt -> "Adjunta tu comprobante de pago predial"
     username.isBlank() -> "Escribe un nombre de usuario"
     username.length < 4 -> "El usuario debe tener al menos 4 caracteres"
-    username.lowercase() in EXISTING_USERNAMES -> "Ese usuario ya existe, elige otro"
     else -> validateNewPassword(password, confirmation)
 }
 
@@ -53,10 +49,9 @@ fun validateRecoveryAccount(account: String): String? {
     }
 }
 
-/** Paso 2 de la recuperación: código de 6 dígitos. */
+/** Paso 2 de la recuperación: código de 6 dígitos. Si es el correcto lo decide el servidor al cambiar la contraseña. */
 fun validateRecoveryCode(code: String): String? = when {
-    code.length != 6 -> "El código tiene 6 dígitos"
-    code != DEMO_RECOVERY_CODE -> "Código incorrecto. Revisa el SMS e intenta de nuevo"
+    code.length != 6 || !code.all { it.isDigit() } -> "El código tiene 6 dígitos"
     else -> null
 }
 
@@ -73,3 +68,41 @@ fun recoveryDestination(account: String): String {
 /** 7711234567 -> "771 123 4567". */
 fun formatPhone(phone: String): String =
     if (phone.length == 10) "${phone.substring(0, 3)} ${phone.substring(3, 6)} ${phone.substring(6)}" else phone
+
+/**
+ * Perfil (USR-21): revisa solo los campos que cambiaron (los `null` no se envían). Son las mismas
+ * reglas que aplica el servidor en `PATCH /usuarios/yo`.
+ */
+fun validateProfileChange(change: PerfilCambio): String? = when {
+    change.nombre != null && change.nombre.isBlank() -> "Escribe tu nombre completo"
+    change.telefono != null && (change.telefono.length != 10 || !change.telefono.all { it.isDigit() }) ->
+        "El teléfono debe tener 10 dígitos"
+    change.calle != null && change.calle.isBlank() -> "Escribe la calle y el número de tu domicilio"
+    change.colonia != null && change.colonia.isBlank() -> "Escribe tu colonia o localidad"
+    else -> null
+}
+
+/** Lo que cambió respecto al perfil guardado, sin espacios sobrantes; `null` en lo que sigue igual. */
+fun profileChange(current: Perfil, nombre: String, telefono: String, calle: String, colonia: String) = PerfilCambio(
+    nombre = nombre.trim().takeIf { it != current.nombre },
+    telefono = telefono.trim().takeIf { it != current.telefono },
+    calle = calle.trim().takeIf { it != current.calle },
+    colonia = colonia.trim().takeIf { it != current.colonia }
+)
+
+/** `true` si no hay ningún cambio que enviar. */
+fun PerfilCambio.isEmpty() = nombre == null && telefono == null && calle == null && colonia == null
+
+fun etiquetaRol(role: String): String = when (role) {
+    Roles.CIUDADANO -> "Ciudadano"
+    Roles.OPERADOR -> "Operador"
+    Roles.ADMIN -> "Administrador"
+    else -> role
+}
+
+fun etiquetaEstadoCuenta(estado: String): String = when (estado) {
+    "ACTIVA" -> "Activa"
+    "EN_REVISION" -> "En revisión"
+    "INACTIVA" -> "Desactivada"
+    else -> estado
+}

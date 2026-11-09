@@ -3,11 +3,14 @@ package com.logue.frontend
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.Json
 
 /** Pantallas que se ven antes de iniciar sesión. */
@@ -24,6 +27,17 @@ private val SessionSaver = Saver<LoginResponse?, String>(
 
 private val AuthScreenSaver = Saver<AuthScreen, String>(save = { it.name }, restore = { AuthScreen.valueOf(it) })
 
+/** Pantallas a las que se llega desde la pantalla principal de cada rol. */
+enum class SubScreen { HOME, PAGO_PREDIAL, PAGOS, PERFIL }
+
+private val SubScreenSaver = Saver<SubScreen, String>(save = { it.name }, restore = { SubScreen.valueOf(it) })
+
+/**
+ * Ancho máximo del contenido (ADM-07). En el teléfono ocupa todo el ancho; en el navegador de una
+ * computadora se centra en lugar de estirarse por toda la pantalla.
+ */
+private val ANCHO_MAXIMO_CONTENIDO = 1080.dp
+
 /**
  * Raíz de la app. Mantiene la sesión:
  * sin sesión -> LoginScreen (o Crear cuenta / Recuperar contraseña);
@@ -34,12 +48,12 @@ fun App() {
     AquaGoTheme {
         var session by rememberSaveable(stateSaver = SessionSaver) { mutableStateOf<LoginResponse?>(null) }
         var authScreen by rememberSaveable(stateSaver = AuthScreenSaver) { mutableStateOf(AuthScreen.LOGIN) }
-        var showPagoPredial by rememberSaveable { mutableStateOf(false) }
+        var sub by rememberSaveable(stateSaver = SubScreenSaver) { mutableStateOf(SubScreen.HOME) }
         var loginMessage by remember { mutableStateOf<String?>(null) }
         val logout = {
             session = null
             authScreen = AuthScreen.LOGIN
-            showPagoPredial = false
+            sub = SubScreen.HOME
         }
         // El servidor respondió 401: el token venció (dura 12 h). Se regresa al login con un aviso.
         val sessionExpired = {
@@ -54,32 +68,52 @@ fun App() {
             color = AppColors.Background,
             contentColor = AppColors.TextPrimary
         ) {
-            Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-                if (current == null) {
-                    when (authScreen) {
-                        AuthScreen.LOGIN -> LoginScreen(
-                            onLoggedIn = {
-                                loginMessage = null
-                                session = it
-                            },
-                            onCreateAccount = { authScreen = AuthScreen.REGISTER },
-                            onForgotPassword = { authScreen = AuthScreen.RECOVER_PASSWORD },
-                            initialMessage = loginMessage
-                        )
-                        AuthScreen.REGISTER -> RegisterScreen(onBack = backToLogin)
-                        AuthScreen.RECOVER_PASSWORD -> RecoverPasswordScreen(onBack = backToLogin)
-                    }
-                } else {
-                    when (current.role) {
-                        Roles.CIUDADANO ->
-                            if (showPagoPredial) {
-                                PagoPredialScreen(current, onBack = { showPagoPredial = false }, onSessionExpired = sessionExpired)
-                            } else {
-                                CiudadanoScreen(current, logout) { showPagoPredial = true }
-                            }
-                        Roles.OPERADOR -> OperadorScreen(current, logout)
-                        Roles.ADMIN -> AdminScreen(current, logout)
-                        else -> UnknownRoleScreen(current.role, logout)
+            Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
+                Box(Modifier.widthIn(max = ANCHO_MAXIMO_CONTENIDO).fillMaxSize()) {
+                    if (current == null) {
+                        when (authScreen) {
+                            AuthScreen.LOGIN -> LoginScreen(
+                                onLoggedIn = {
+                                    loginMessage = null
+                                    session = it
+                                },
+                                onCreateAccount = { authScreen = AuthScreen.REGISTER },
+                                onForgotPassword = { authScreen = AuthScreen.RECOVER_PASSWORD },
+                                initialMessage = loginMessage
+                            )
+                            AuthScreen.REGISTER -> RegisterScreen(onBack = backToLogin)
+                            AuthScreen.RECOVER_PASSWORD -> RecoverPasswordScreen(onBack = backToLogin)
+                        }
+                    } else {
+                        val home = { sub = SubScreen.HOME }
+                        when {
+                            current.role !in setOf(Roles.CIUDADANO, Roles.OPERADOR, Roles.ADMIN) ->
+                                UnknownRoleScreen(current.role, logout)
+                            sub == SubScreen.PERFIL ->
+                                PerfilScreen(current, onBack = home, onSessionExpired = sessionExpired)
+                            sub == SubScreen.PAGOS ->
+                                PagosPredialesScreen(current, onBack = home, onSessionExpired = sessionExpired)
+                            sub == SubScreen.PAGO_PREDIAL && current.role == Roles.CIUDADANO ->
+                                PagoPredialScreen(current, onBack = home, onSessionExpired = sessionExpired)
+                            current.role == Roles.CIUDADANO -> CiudadanoScreen(
+                                current, logout,
+                                onPagoPredial = { sub = SubScreen.PAGO_PREDIAL },
+                                onHistorialPagos = { sub = SubScreen.PAGOS },
+                                onPerfil = { sub = SubScreen.PERFIL },
+                                onSessionExpired = sessionExpired
+                            )
+                            current.role == Roles.OPERADOR -> OperadorScreen(
+                                current, logout,
+                                onPerfil = { sub = SubScreen.PERFIL },
+                                onSessionExpired = sessionExpired
+                            )
+                            else -> AdminScreen(
+                                current, logout,
+                                onComprobantes = { sub = SubScreen.PAGOS },
+                                onPerfil = { sub = SubScreen.PERFIL },
+                                onSessionExpired = sessionExpired
+                            )
+                        }
                     }
                 }
             }

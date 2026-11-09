@@ -5,20 +5,61 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-// NOTA: los datos de las pantallas (estadísticas y solicitudes) son de DEMOSTRACIÓN.
-// El backend actual solo implementa el login; las listas se conectarían a nuevos endpoints.
+// Los datos de las tres pantallas salen del servidor: GET /solicitudes (ciudadano y delegado) y
+// GET /entregas (repartidor). Cómo se convierten en tarjetas y renglones está en SolicitudesVista.kt.
 
 /** Tarjeta de estadística (número grande + etiqueta). */
 data class Stat(val value: String, val label: String, val color: Color)
 /** Renglón de la lista (hora, título, subtítulo y estado con color). */
 data class Entry(val time: String, val title: String, val subtitle: String, val status: String, val color: Color)
+
+/** Estado de una carga de datos del servidor. */
+sealed interface Carga<out T> {
+    data object Cargando : Carga<Nothing>
+    data class Lista<T>(val datos: T) : Carga<T>
+    data class Fallo(val mensaje: String) : Carga<Nothing>
+}
+
+/**
+ * Pide datos al servidor con el token de la sesión y los entrega como [Carga]. Cambiar [recarga]
+ * vuelve a pedirlos (botón «Reintentar»). Si el servidor responde 401 se llama a [onSessionExpired].
+ */
+@Composable
+fun <T> cargarDatos(
+    session: LoginResponse,
+    recarga: Int,
+    onSessionExpired: () -> Unit,
+    llamada: suspend (String) -> ApiResult<T>
+): Carga<T> {
+    val estado = produceState<Carga<T>>(Carga.Cargando, session.token, recarga) {
+        value = Carga.Cargando
+        value = when (val result = llamada(session.token)) {
+            is ApiResult.Ok -> Carga.Lista(result.valor)
+            ApiResult.SesionVencida -> {
+                onSessionExpired()
+                Carga.Cargando
+            }
+            else -> Carga.Fallo(result.mensajeDeError() ?: "No se pudo cargar la información")
+        }
+    }
+    return estado.value
+}
+
+/** La lista cargada, o una lista vacía mientras carga o si falló. */
+private fun <T> Carga<List<T>>.datosOVacio(): List<T> = when (this) {
+    is Carga.Lista -> datos
+    else -> emptyList()
+}
+
+/** Ancho a partir del cual la pantalla se acomoda para computadora (ADM-07): tarjetas en una fila y renglones en dos columnas. */
+private val ANCHO_COMPUTADORA = 640.dp
 
 /** Pantalla genérica reutilizada por los tres roles: cambia solo el contenido que recibe. */
 @Composable
@@ -30,7 +71,13 @@ fun RoleScreen(
     sectionTitle: String,
     entries: List<Entry>,
     onLogout: () -> Unit,
-    actions: @Composable ColumnScope.() -> Unit = {}
+    actions: @Composable ColumnScope.() -> Unit = {},
+    /** Mientras `true` se muestra «Cargando...» en lugar de las tarjetas y la lista. */
+    loading: Boolean = false,
+    /** Si no es `null` se muestra este error con el botón «Reintentar». */
+    errorMessage: String? = null,
+    onRetry: () -> Unit = {},
+    emptyText: String = "Todavía no hay registros"
 ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -59,89 +106,160 @@ fun RoleScreen(
 
         actions()
 
-        stats.chunked(2).forEach { pair ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                pair.forEach { StatCard(it.value, it.label, it.color, Modifier.weight(1f)) }
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
+        when {
+            loading -> Text("Cargando...", color = AppColors.TextMuted)
+            errorMessage != null -> AppCard {
+                Text(errorMessage, color = AppColors.Red)
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = onRetry,
+                    shape = CircleShape,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.Accent)
+                ) { Text("Reintentar") }
             }
-        }
+            else -> BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val ancha = maxWidth >= ANCHO_COMPUTADORA
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    stats.chunked(if (ancha) 4 else 2).forEach { group ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            group.forEach { StatCard(it.value, it.label, it.color, Modifier.weight(1f)) }
+                            repeat((if (ancha) 4 else 2) - group.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
 
-        Text(sectionTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(sectionTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
 
-        entries.forEach { e ->
-            AppCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(e.time, color = AppColors.Accent, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(16.dp))
-                    Column {
-                        Text(e.title, fontWeight = FontWeight.SemiBold)
-                        Text(e.subtitle, color = AppColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+                    if (entries.isEmpty()) {
+                        Text(emptyText, color = AppColors.TextMuted)
+                    }
+                    entries.chunked(if (ancha) 2 else 1).forEach { group ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            group.forEach { EntryCard(it, Modifier.weight(1f)) }
+                            if (ancha && group.size == 1) Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
-                Spacer(Modifier.height(10.dp))
-                Pill(e.status, e.color)
             }
         }
     }
 }
 
 @Composable
-fun CiudadanoScreen(session: LoginResponse, onLogout: () -> Unit, onPagoPredial: () -> Unit) = RoleScreen(
-    title = "Mis solicitudes",
-    roleLabel = "Ciudadano",
-    name = session.username,
-    stats = listOf(
-        Stat("1", "En camino", AppColors.Blue),
-        Stat("1", "Pendientes", AppColors.Yellow),
-        Stat("3", "Entregadas", AppColors.Green)
-    ),
-    sectionTitle = "Solicitudes de agua",
-    entries = listOf(
-        Entry("10:00", "Pipa de 10,000 L", "Calle Hidalgo #12", "En camino", AppColors.Blue),
-        Entry("16:30", "Pipa de 5,000 L", "Calle Hidalgo #12", "Pendiente", AppColors.Yellow),
-        Entry("08:00", "Pipa de 10,000 L", "Calle Hidalgo #12", "Entregada", AppColors.Green)
-    ),
-    onLogout = onLogout,
-    actions = { PrimaryButton("Registrar pago predial", onClick = onPagoPredial) }
-)
+private fun EntryCard(e: Entry, modifier: Modifier = Modifier) {
+    AppCard(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(e.time, color = AppColors.Accent, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(16.dp))
+            Column {
+                Text(e.title, fontWeight = FontWeight.SemiBold)
+                Text(e.subtitle, color = AppColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Pill(e.status, e.color)
+    }
+}
 
 @Composable
-fun OperadorScreen(session: LoginResponse, onLogout: () -> Unit) = RoleScreen(
-    title = "Mis entregas de hoy",
-    roleLabel = "Operador",
-    name = session.username,
-    stats = listOf(
-        Stat("3", "Entregas hoy", AppColors.Accent),
-        Stat("1", "Completadas", AppColors.Green)
-    ),
-    sectionTitle = "Ruta del día",
-    entries = listOf(
-        Entry("09:00", "Colonia Centro", "10,000 L", "Completada", AppColors.Green),
-        Entry("11:30", "Colonia Reforma", "5,000 L", "Siguiente", AppColors.Blue),
-        Entry("14:00", "Barrio Alto", "10,000 L", "Pendiente", AppColors.Yellow)
-    ),
-    onLogout = onLogout
-)
+fun CiudadanoScreen(
+    session: LoginResponse,
+    onLogout: () -> Unit,
+    onPagoPredial: () -> Unit,
+    onHistorialPagos: () -> Unit = {},
+    onPerfil: () -> Unit = {},
+    onSessionExpired: () -> Unit = onLogout
+) {
+    var recarga by remember { mutableStateOf(0) }
+    val carga = cargarDatos(session, recarga, onSessionExpired) { listarSolicitudes(it) }
+    val solicitudes = carga.datosOVacio()
+    RoleScreen(
+        title = "Mis solicitudes",
+        roleLabel = "Ciudadano",
+        name = session.username,
+        stats = contadoresCiudadano(solicitudes),
+        sectionTitle = "Solicitudes de agua",
+        entries = entradasCiudadano(solicitudes),
+        onLogout = onLogout,
+        actions = {
+            PrimaryButton("Registrar pago predial", onClick = onPagoPredial)
+            OutlinedButton(
+                onClick = onHistorialPagos,
+                shape = CircleShape,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.Accent),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
+            ) { Text("Mis pagos prediales", fontWeight = FontWeight.Bold) }
+            TextButton(onClick = onPerfil, modifier = Modifier.fillMaxWidth()) {
+                Text("Mi perfil", color = AppColors.Accent)
+            }
+        },
+        loading = carga is Carga.Cargando,
+        errorMessage = (carga as? Carga.Fallo)?.mensaje,
+        onRetry = { recarga++ },
+        emptyText = "Aún no tienes solicitudes de agua"
+    )
+}
 
 @Composable
-fun AdminScreen(session: LoginResponse, onLogout: () -> Unit) = RoleScreen(
-    title = "Panel de solicitudes",
-    roleLabel = "Administrador",
-    name = session.username,
-    stats = listOf(
-        Stat("2", "Pendientes", AppColors.Yellow),
-        Stat("2", "En camino", AppColors.Blue),
-        Stat("5", "Entregadas", AppColors.Green),
-        Stat("1", "Canceladas", AppColors.Red)
-    ),
-    sectionTitle = "Solicitudes recientes",
-    entries = listOf(
-        Entry("09:00", "Colonia Centro", "Operador: Luis", "Entregada", AppColors.Green),
-        Entry("11:30", "Colonia Reforma", "Operador: Luis", "En camino", AppColors.Blue),
-        Entry("12:30", "Barrio Alto", "Sin asignar", "Pendiente", AppColors.Yellow)
-    ),
-    onLogout = onLogout
-)
+fun OperadorScreen(
+    session: LoginResponse,
+    onLogout: () -> Unit,
+    onPerfil: () -> Unit = {},
+    onSessionExpired: () -> Unit = onLogout
+) {
+    var recarga by remember { mutableStateOf(0) }
+    val carga = cargarDatos(session, recarga, onSessionExpired) { listarEntregas(it) }
+    val entregas = carga.datosOVacio()
+    RoleScreen(
+        title = "Mis entregas de hoy",
+        roleLabel = "Operador",
+        name = session.username,
+        stats = contadoresOperador(entregas),
+        sectionTitle = "Ruta del día",
+        entries = entradasOperador(entregas),
+        onLogout = onLogout,
+        actions = {
+            TextButton(onClick = onPerfil, modifier = Modifier.fillMaxWidth()) {
+                Text("Mi perfil", color = AppColors.Accent)
+            }
+        },
+        loading = carga is Carga.Cargando,
+        errorMessage = (carga as? Carga.Fallo)?.mensaje,
+        onRetry = { recarga++ },
+        emptyText = "No tienes entregas asignadas para hoy"
+    )
+}
+
+@Composable
+fun AdminScreen(
+    session: LoginResponse,
+    onLogout: () -> Unit,
+    onComprobantes: () -> Unit = {},
+    onPerfil: () -> Unit = {},
+    onSessionExpired: () -> Unit = onLogout
+) {
+    var recarga by remember { mutableStateOf(0) }
+    val carga = cargarDatos(session, recarga, onSessionExpired) { listarSolicitudes(it) }
+    val solicitudes = carga.datosOVacio()
+    RoleScreen(
+        title = "Panel de solicitudes",
+        roleLabel = "Administrador",
+        name = session.username,
+        stats = contadoresAdmin(solicitudes),
+        sectionTitle = "Solicitudes recientes",
+        entries = entradasAdmin(solicitudes),
+        onLogout = onLogout,
+        actions = {
+            PrimaryButton("Comprobantes de pago predial", onClick = onComprobantes)
+            TextButton(onClick = onPerfil, modifier = Modifier.fillMaxWidth()) {
+                Text("Mi perfil", color = AppColors.Accent)
+            }
+        },
+        loading = carga is Carga.Cargando,
+        errorMessage = (carga as? Carga.Fallo)?.mensaje,
+        onRetry = { recarga++ },
+        emptyText = "Todavía no hay solicitudes registradas"
+    )
+}
 
 /** Se muestra si el backend devuelve un rol que la app no conoce. */
 @Composable

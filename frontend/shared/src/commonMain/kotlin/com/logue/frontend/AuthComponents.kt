@@ -253,7 +253,5 @@ fun SuccessMessage(
         extra()
         Spacer(Modifier.height(28.dp))
         PrimaryButton(buttonText, onClick = onClick)
-        Spacer(Modifier.height(16.dp))
-        DemoNote()
     }
 }

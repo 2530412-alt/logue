@@ -11,7 +11,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Pasos de la recuperación de contraseña. */
@@ -21,11 +20,12 @@ enum class RecoverStep { ACCOUNT, CODE, NEW_PASSWORD, DONE }
 private val RecoverStepSaver = Saver<RecoverStep, String>(save = { it.name }, restore = { RecoverStep.valueOf(it) })
 
 /**
- * Recuperar contraseña (pantalla DEMOSTRATIVA) en 3 pasos:
- * 1) usuario o teléfono, 2) código que llega por SMS, 3) contraseña nueva.
+ * Recuperar contraseña (USR-12) en 3 pasos:
+ * 1) usuario o teléfono, 2) código de 6 dígitos que manda el servidor, 3) contraseña nueva.
  *
- * Por ahora no llama al backend: el código válido es [DEMO_RECOVERY_CODE]
- * y la contraseña del servidor no cambia.
+ * El servidor genera el código (`POST /recuperacion/solicitar`) y solo cambia la contraseña si el
+ * código es el vigente (`POST /recuperacion/confirmar`). El envío del código por SMS depende de
+ * NOT-05: mientras no exista, el código queda en el registro del servidor.
  */
 @Composable
 fun RecoverPasswordScreen(onBack: () -> Unit) {
@@ -98,10 +98,14 @@ fun RecoverPasswordScreen(onBack: () -> Unit) {
                             scope.launch {
                                 loading = true
                                 error = null
-                                delay(900) // simula el envío del SMS
+                                val result = pedirCodigoDeRecuperacion(account)
                                 loading = false
-                                code = ""
-                                goTo(RecoverStep.CODE)
+                                if (result is ApiResult.Ok) {
+                                    code = ""
+                                    goTo(RecoverStep.CODE)
+                                } else {
+                                    error = result.mensajeDeError()
+                                }
                             }
                         }
                     }
@@ -119,7 +123,7 @@ fun RecoverPasswordScreen(onBack: () -> Unit) {
                         onValueChange = { code = it.filter { c -> c.isDigit() }.take(6) },
                         label = "Código de verificación",
                         keyboardType = KeyboardType.NumberPassword,
-                        supportingText = "Demostración: usa el código $DEMO_RECOVERY_CODE"
+                        supportingText = "Escribe el código de 6 dígitos"
                     )
                     Spacer(Modifier.height(16.dp))
                     PrimaryButton("Verificar código") {
@@ -128,8 +132,12 @@ fun RecoverPasswordScreen(onBack: () -> Unit) {
                     }
                     TextButton(
                         onClick = {
-                            error = null
-                            info = "Te enviamos un código nuevo"
+                            scope.launch {
+                                error = null
+                                info = null
+                                val result = pedirCodigoDeRecuperacion(account)
+                                if (result is ApiResult.Ok) info = "Te enviamos un código nuevo" else error = result.mensajeDeError()
+                            }
                         },
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     ) {
@@ -165,9 +173,16 @@ fun RecoverPasswordScreen(onBack: () -> Unit) {
                             scope.launch {
                                 loading = true
                                 error = null
-                                delay(900) // simula el guardado en el servidor
+                                val result = cambiarContrasenaConCodigo(account, code, password)
                                 loading = false
-                                goTo(RecoverStep.DONE)
+                                if (result is ApiResult.Ok) {
+                                    goTo(RecoverStep.DONE)
+                                } else {
+                                    val mensaje = result.mensajeDeError()
+                                    // Un código incorrecto o vencido se corrige en el paso anterior
+                                    if (result is ApiResult.Rechazo) goTo(RecoverStep.CODE)
+                                    error = mensaje
+                                }
                             }
                         }
                     }
@@ -181,7 +196,5 @@ fun RecoverPasswordScreen(onBack: () -> Unit) {
                 Text(it, color = AppColors.Green, style = MaterialTheme.typography.bodySmall)
             }
         }
-        Spacer(Modifier.height(16.dp))
-        DemoNote()
     }
 }

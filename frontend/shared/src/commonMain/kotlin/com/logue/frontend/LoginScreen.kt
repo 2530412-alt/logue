@@ -123,6 +123,7 @@ fun LoginScreen(
                                 is LoginResult.Success -> onLoggedIn(result.session)
                                 LoginResult.InvalidCredentials -> error = "Usuario o contraseña incorrectos"
                                 is LoginResult.Locked -> error = lockedMessage(result.retryAfterSeconds)
+                                is LoginResult.AccountBlocked -> error = result.mensaje
                                 LoginResult.ServerError -> error = "El servidor tuvo un problema. Intenta de nuevo"
                                 LoginResult.NetworkError -> error = MENSAJE_SIN_CONEXION
                             }

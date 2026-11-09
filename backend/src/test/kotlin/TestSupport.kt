@@ -47,22 +47,43 @@ fun ApplicationTestBuilder.setupAquaGo(
     attempts: LoginAttempts = LoginAttempts(),
     corsOrigins: List<String> = emptyList(),
     loginsPerMinute: Int = 1_000,
-    tokens: TokenService = TokenService(TEST_SECRET)
+    tokens: TokenService = TokenService(TEST_SECRET),
+    users: UserRepository = JsonUserRepository(testUsers),
+    solicitudes: SolicitudStore = SolicitudStore(),
+    codeSender: CodeSender = RecordingCodeSender(),
+    recovery: RecoveryCodes = RecoveryCodes(),
+    clock: Clock = MutableClock()
 ): PagoStore {
     val store = PagoStore(Files.createTempDirectory("pagos-test").toFile())
     application {
         aquaGoModule(
-            users = JsonUserRepository(testUsers),
+            users = users,
             pagos = store,
             remote = remote,
             tokens = tokens,
             attempts = attempts,
             corsOrigins = corsOrigins,
-            loginsPerMinute = loginsPerMinute
+            loginsPerMinute = loginsPerMinute,
+            recovery = recovery,
+            codeSender = codeSender,
+            solicitudes = solicitudes,
+            clock = clock
         )
     }
     return store
 }
+
+/** Guarda los códigos de recuperación que el servidor "enviaría" por SMS. */
+class RecordingCodeSender : CodeSender {
+    val sent = mutableListOf<Pair<String, String>>()
+    override fun send(phone: String, code: String) {
+        sent.add(phone to code)
+    }
+    val lastCode: String get() = sent.last().second
+}
+
+/** Hash de la contraseña de prueba, para crear cuentas a mano en las pruebas. */
+fun testPasswordHash(): String = testHash
 
 suspend fun ApplicationTestBuilder.login(username: String, password: String = TEST_PASSWORD, ip: String? = null) =
     client.post("/login") {
@@ -98,3 +119,32 @@ suspend fun ApplicationTestBuilder.subir(
 ) {
     token?.let { bearerAuth(it) }
 }
+
+/** Registro de un ciudadano (multipart con la foto del comprobante). Cada campo se puede cambiar para probar errores. */
+suspend fun ApplicationTestBuilder.registrar(
+    nombre: String = "María López",
+    telefono: String = "7711234567",
+    calle: String = "Calle Hidalgo 12",
+    colonia: String = "Las Camelinas",
+    usuario: String = "maria",
+    contrasena: String = "secreto1",
+    folio: String = "",
+    foto: ByteArray? = testJpeg
+) = client.submitFormWithBinaryData(
+    url = "/registro",
+    formData = formData {
+        append("nombre", nombre)
+        append("telefono", telefono)
+        append("calle", calle)
+        append("colonia", colonia)
+        append("usuario", usuario)
+        append("contrasena", contrasena)
+        append("folio", folio)
+        if (foto != null) {
+            append("foto", foto, Headers.build {
+                append(HttpHeaders.ContentType, "image/jpeg")
+                append(HttpHeaders.ContentDisposition, "filename=\"comprobante.jpg\"")
+            })
+        }
+    }
+)

@@ -14,15 +14,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Crear cuenta: registro del ciudadano (pantalla DEMOSTRATIVA).
+ * Crear cuenta: registro del ciudadano (USR-08).
  *
- * Pide los datos del registro real: nombre, teléfono de contacto, domicilio y comprobante
- * de pago predial. Por ahora no llama al backend: al terminar muestra que la cuenta quedó
- * "en revisión", porque el delegado debe validar el comprobante antes de activarla.
+ * Pide nombre, teléfono de contacto, domicilio y la foto del comprobante de pago predial, que se
+ * toma con la cámara de la app (PRE-13). Todo se envía a `POST /registro`: el servidor rechaza un
+ * usuario repetido (USR-10) y deja la cuenta "en revisión" hasta que el delegado valida el
+ * comprobante (USR-11).
  *
  * Solo los ciudadanos se registran desde la app; las cuentas de repartidor y de
  * administrador las da de alta el delegado.
@@ -33,7 +33,9 @@ fun RegisterScreen(onBack: () -> Unit) {
     var phone by rememberSaveable { mutableStateOf("") }
     var street by rememberSaveable { mutableStateOf("") }
     var neighborhood by rememberSaveable { mutableStateOf("") }
-    var receiptFile by rememberSaveable { mutableStateOf<String?>(null) }
+    // La foto se queda en remember: varios MB no caben en el estado que Android guarda al girar la pantalla
+    var receiptPhoto by remember { mutableStateOf<ByteArray?>(null) }
+    var showCamera by remember { mutableStateOf(false) }
     var username by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
@@ -41,14 +43,28 @@ fun RegisterScreen(onBack: () -> Unit) {
     var loading by remember { mutableStateOf(false) }
     var registered by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // La cámara ocupa toda la pantalla. Si el usuario cancela se conserva la foto anterior, si había.
+    if (showCamera) {
+        CameraCaptureScreen(
+            onPhoto = { bytes ->
+                receiptPhoto = bytes
+                error = null
+                showCamera = false
+            },
+            onClose = { showCamera = false }
+        )
+        return
+    }
     PlatformBackHandler(onBack = onBack)
 
     if (registered) {
         val firstName = fullName.trim().substringBefore(' ')
         SuccessMessage(
             title = "¡Cuenta creada!",
-            message = "Gracias, $firstName. El delegado revisará tu comprobante de pago predial " +
-                "y te avisaremos al ${formatPhone(phone)} cuando tu cuenta esté activa.",
+            message = "Gracias, $firstName. El delegado revisará tu comprobante de pago predial. " +
+                "Cuando valide tu cuenta podrás iniciar sesión con el usuario que elegiste; " +
+                "si tienes dudas, el delegado te contactará al ${formatPhone(phone)}.",
             buttonText = "Volver a iniciar sesión",
             onClick = onBack
         ) {
@@ -111,25 +127,33 @@ fun RegisterScreen(onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(12.dp))
-            val file = receiptFile
-            if (file == null) {
-                // Demostración: simula que se eligió un archivo (todavía no abre la galería).
+            val photo = receiptPhoto
+            if (!isCameraSupported) {
+                Text(
+                    "La cámara solo está disponible en la app de Android por ahora.",
+                    color = AppColors.TextMuted,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else if (photo == null) {
                 OutlinedButton(
-                    onClick = { receiptFile = "comprobante_predial_2026.pdf" },
+                    onClick = { showCamera = true },
                     shape = CircleShape,
                     border = BorderStroke(1.dp, AppColors.Accent),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Adjuntar comprobante", color = AppColors.Accent)
+                    Text("Tomar foto del comprobante", color = AppColors.Accent)
                 }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(file, fontWeight = FontWeight.SemiBold)
+                        Text("Foto del comprobante", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(6.dp))
-                        Pill("Adjuntado", AppColors.Green)
+                        Pill("Lista · ${(photo.size / 1024).coerceAtLeast(1)} KB", AppColors.Green)
                     }
-                    TextButton(onClick = { receiptFile = null }) {
+                    TextButton(onClick = { showCamera = true }) {
+                        Text("Repetir", color = AppColors.Accent)
+                    }
+                    TextButton(onClick = { receiptPhoto = null }) {
                         Text("Quitar", color = AppColors.Red)
                     }
                 }
@@ -161,23 +185,29 @@ fun RegisterScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(20.dp))
 
         PrimaryButton(if (loading) "Creando cuenta..." else "Crear cuenta", enabled = !loading) {
+            val photo = receiptPhoto
             val validation = validateRegistration(
-                fullName, phone, street, neighborhood, receiptFile != null, username, password, confirmation
+                fullName, phone, street, neighborhood, photo != null, username, password, confirmation
             )
-            if (validation != null) {
+            if (validation != null || photo == null) {
                 error = validation
             } else {
                 scope.launch {
                     loading = true
                     error = null
-                    delay(1200) // simula el envío al servidor
+                    val result = registrarCuenta(
+                        DatosRegistro(fullName, phone, street, neighborhood, username, password),
+                        photo
+                    )
                     loading = false
-                    registered = true
+                    when (result) {
+                        is ApiResult.Ok -> registered = true
+                        // 409 si el usuario o el teléfono ya existen, 400 si el servidor rechaza un dato
+                        else -> error = result.mensajeDeError() ?: "No se pudo crear la cuenta"
+                    }
                 }
             }
         }
         FormError(error)
-        Spacer(Modifier.height(16.dp))
-        DemoNote()
     }
 }
