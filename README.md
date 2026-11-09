@@ -62,16 +62,19 @@ La pantalla muestra un mensaje distinto para cada caso: usuario o contraseña in
 > **hash BCrypt** de cada contraseña (`passwordHash`), nunca el texto. Para agregar un usuario, genera su hash con
 > `gradlew run --args="hash MiContraseña"` y pégalo en `users.json`. En la Fase 2 los usuarios pasan a MySQL.
 > Antes del piloto cambien las contraseñas `1234`: el repositorio es público.
-> Los datos que muestra cada vista son de demostración; se conectarán al backend en las siguientes etapas.
+> Las vistas de cada rol ya leen sus datos del backend (`GET /solicitudes`, `GET /entregas`, `GET /pagos-prediales`). Las listas de
+> solicitudes empiezan vacías: todavía no hay forma de crear una solicitud desde la app (SOL-03), así que se cargan a mano en `solicitudes.json`.
 
-## Pantallas demostrativas de acceso
+## Pantallas de acceso a la cuenta
 
-Se agregaron desde el login. Todavía **no se envían al backend**, y cada pantalla lo indica al final.
+Se abren desde el login y ya hablan con el backend.
 
 | Pantalla | Cómo se abre | Qué hace |
 |---|---|---|
-| **Crear cuenta** | «¿No tienes cuenta? Regístrate» | Registro del ciudadano: nombre completo, teléfono (10 dígitos), domicilio, comprobante de pago predial, usuario y contraseña. Al terminar, la cuenta queda «En revisión» para que el delegado valide el comprobante. Las cuentas de repartidor y administrador las da de alta el delegado |
-| **Recuperar contraseña** | «¿Olvidaste tu contraseña?» | Tres pasos: usuario o teléfono → código por SMS → contraseña nueva. El código de demostración es **123456** |
+| **Crear cuenta** | «¿No tienes cuenta? Regístrate» | Registro del ciudadano: nombre completo, teléfono (10 dígitos), domicilio, foto del comprobante de pago predial (con la cámara, solo Android), usuario y contraseña. `POST /registro` guarda la cuenta como «En revisión»; no puede iniciar sesión hasta que el delegado la active. Rechaza usuarios y teléfonos repetidos. Las cuentas de repartidor y administrador las da de alta el delegado |
+| **Recuperar contraseña** | «¿Olvidaste tu contraseña?» | Tres pasos: usuario o teléfono → código de 6 dígitos → contraseña nueva. El servidor genera el código (vigente 10 minutos, 5 intentos); mientras no exista el envío por SMS (NOT-05), el código solo aparece en el registro del servidor |
+| **Perfil** | Encabezado de cada vista | Consulta y edita nombre, teléfono y domicilio (`GET` y `PATCH /usuarios/yo`) |
+| **Mis pagos prediales** | Inicio del ciudadano | Historial de pagos y visor de la foto de cada comprobante |
 
 Las reglas de validación están en `AuthValidation.kt` y tienen pruebas en `AuthValidationTest.kt`.
 
@@ -86,17 +89,19 @@ logue/
 │       │   ├── main.kt               Arranca Netty en el puerto 8081 (o PORT); comandos «hash» y «probar»
 │       │   ├── Application.kt        aquaGoModule(): registro de peticiones, CORS, serialización, errores, seguridad y rutas
 │       │   ├── Security.kt           Token JWT, permisos por rol, bloqueo por intentos y límite por IP
-│       │   ├── Users.kt              Hash BCrypt de contraseñas y lectura de users.json (UserRepository)
+│       │   ├── Users.kt              Hash BCrypt, UserRepository (buscar, agregar, actualizar) y users.json bajo DATA_DIR
+│       │   ├── Cuentas.kt            Registro, recuperación de contraseña, perfil y cambio de estado de cuenta
+│       │   ├── Solicitudes.kt        Solicitudes en solicitudes.json, GET /solicitudes y GET /entregas
 │       │   ├── Serialization.kt      install(ContentNegotiation) { json() }
-│       │   ├── Routing.kt            GET /, GET /salud, POST /login y /pagos-prediales (protegidas con token)
+│       │   ├── Routing.kt            GET /, GET /salud, POST /login y /pagos-prediales (protegidas con token); registra además las rutas de cuentas y solicitudes
 │       │   ├── PagosPrediales.kt     Guarda en disco las fotos de los pagos prediales
 │       │   ├── RemoteCopy.kt         Copia opcional de las fotos a otro servidor por SFTP (SSH)
 │       │   ├── Probador.kt           Pruebas funcionales y de rendimiento contra el servidor desplegado
-│       │   └── Models.kt             DTOs @Serializable: User, LoginRequest, LoginResponse, Salud, PagoPredial
+│       │   └── Models.kt             DTOs @Serializable: User, EstadoCuenta, LoginRequest, LoginResponse, Salud, PagoPredial, Perfil, Registro y Recuperación
 │       ├── main/resources/
 │       │   ├── users.json            Usuarios predefinidos con el hash BCrypt de su contraseña y su rol
 │       │   └── logback.xml           Formato del registro en consola
-│       └── test/kotlin/              AuthTest, PagosPredialesTest, RemoteCopyTest y ServerTest (36 pruebas con testApplication)
+│       └── test/kotlin/              AuthTest, PagosPredialesTest, RemoteCopyTest, ServerTest, CuentasTest y SolicitudesTest (67 pruebas con testApplication)
 │
 └── frontend/                         PROYECTO KOTLIN MULTIPLATFORM (Android Studio)
     ├── androidApp/                   App Android: MainActivity.kt y AndroidManifest.xml (permisos de red)
@@ -107,9 +112,13 @@ logue/
         ├── commonMain/               CÓDIGO COMPARTIDO por todas las plataformas
         │   ├── App.kt                Raíz: guarda la sesión y elige la pantalla según el rol
         │   ├── LoginScreen.kt        Pantalla de inicio de sesión
-        │   ├── RegisterScreen.kt     Crear cuenta (demostrativa)
-        │   ├── RecoverPasswordScreen.kt  Recuperar contraseña (demostrativa)
-        │   ├── Screens.kt            Vistas por rol: Ciudadano, Operador, Administrador
+        │   ├── RegisterScreen.kt     Crear cuenta: formulario y envío del registro (POST /registro)
+        │   ├── RecoverPasswordScreen.kt  Recuperar contraseña: solicitar y confirmar el código
+        │   ├── Screens.kt            Vistas por rol (Ciudadano, Operador, Administrador) con datos del servidor
+        │   ├── PerfilScreen.kt       Perfil: ver y editar nombre, teléfono y domicilio
+        │   ├── PagosPredialesScreen.kt  Historial de pagos y visor de fotos
+        │   ├── SolicitudesVista.kt   Etiquetas, colores y contadores de las listas de solicitudes
+        │   ├── CuentasApi.kt         Llamadas a registro, recuperación, perfil, solicitudes, entregas y pagos
         │   ├── AuthApi.kt            Ktor Client: POST /login, resultado del login y despertar al servidor
         │   ├── PagosApi.kt           POST /pagos-prediales con el token
         │   ├── AuthValidation.kt     Reglas de los formularios
@@ -117,8 +126,8 @@ logue/
         │   ├── Config.kt             SERVIDOR_NUBE, expect val SERVIDOR_LOCAL y BASE_URL según SERVIDOR_URL
         │   ├── AuthComponents.kt / Components.kt   Piezas de interfaz reutilizables
         │   └── Theme.kt / AquaGoTheme.kt           Colores y tema de AquaGo
-        ├── androidMain/ jsMain/ wasmJsMain/ iosMain/   CÓDIGO ESPECÍFICO: actual val SERVIDOR_LOCAL
-        └── commonTest/               Pruebas de las validaciones y de la dirección del servidor
+        ├── androidMain/ jsMain/ wasmJsMain/ iosMain/   CÓDIGO ESPECÍFICO: actual val SERVIDOR_LOCAL y decodeImage (ImageDecoder)
+        └── commonTest/               Pruebas de las validaciones, de las vistas de solicitudes y de la dirección del servidor
 ```
 
 ## Conexión con el serializador (kotlinx.serialization)
