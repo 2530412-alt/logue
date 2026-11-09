@@ -40,7 +40,7 @@ fun Application.configureRouting(
 ) {
     routing {
         get("/") {
-            call.respondText("Logue backend funcionando")
+            call.respondText("Logue backend funcionando prueba")
         }
 
         // GET /salud -> estado, plataforma y commit desplegado (SRV-13). Público: lo usa la app para despertar al servidor
