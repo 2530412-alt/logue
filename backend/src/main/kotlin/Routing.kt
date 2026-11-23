@@ -40,7 +40,8 @@ fun Application.configureRouting(
     recovery: RecoveryCodes = RecoveryCodes(),
     codeSender: CodeSender = LogCodeSender(),
     solicitudes: SolicitudStore = defaultSolicitudStore(),
-    clock: java.time.Clock = java.time.Clock.systemUTC()
+    clock: java.time.Clock = java.time.Clock.systemUTC(),
+    syncLog: SyncLog = defaultSyncLog()
 ) {
     routing {
         get("/") {
@@ -120,6 +121,8 @@ fun Application.configureRouting(
 
             cuentasAutenticadas(users)
             solicitudesRoutes(solicitudes, clock)
+            // Integracion AquaGo: pedir/cancelar pipa, asignar rutas, cerrar entregas, /sync y usuarios (Operacion.kt)
+            operacionRoutes(solicitudes, users, syncLog, clock)
 
             // POST /pagos-prediales (multipart: folio opcional, foto). El usuario sale del token, no del formulario.
             //   -> 201 + PagoPredial | 400 datos inválidos | 401 sin sesión | 403 no es ciudadano

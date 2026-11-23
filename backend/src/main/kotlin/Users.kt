@@ -39,6 +39,9 @@ interface UserRepository {
 
     /** Reemplaza los datos de una cuenta que ya existe (perfil, contraseña, estado). `false` si no existe. */
     fun update(user: User): Boolean
+
+    /** Todas las cuentas, para el panel del delegado (integración con AquaGo web). */
+    fun all(): List<User> = emptyList()
 }
 
 /**
@@ -78,6 +81,9 @@ class JsonUserRepository(users: List<User>, private val file: File? = null) : Us
         persist()
         return true
     }
+
+    @Synchronized
+    override fun all(): List<User> = byName.values.toList()
 
     private fun persist() {
         val target = file ?: return

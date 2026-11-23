@@ -52,7 +52,8 @@ fun ApplicationTestBuilder.setupAquaGo(
     solicitudes: SolicitudStore = SolicitudStore(),
     codeSender: CodeSender = RecordingCodeSender(),
     recovery: RecoveryCodes = RecoveryCodes(),
-    clock: Clock = MutableClock()
+    clock: Clock = MutableClock(),
+    syncLog: SyncLog = SyncLog()
 ): PagoStore {
     val store = PagoStore(Files.createTempDirectory("pagos-test").toFile())
     application {
@@ -67,7 +68,8 @@ fun ApplicationTestBuilder.setupAquaGo(
             recovery = recovery,
             codeSender = codeSender,
             solicitudes = solicitudes,
-            clock = clock
+            clock = clock,
+            syncLog = syncLog
         )
     }
     return store

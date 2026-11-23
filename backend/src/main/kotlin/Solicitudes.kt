@@ -19,6 +19,8 @@ object EstadoSolicitud {
     const val EN_CAMINO = "EN_CAMINO"
     const val ENTREGADA = "ENTREGADA"
     const val CANCELADA = "CANCELADA"
+    /** El repartidor llegó pero no pudo entregar (nadie en casa, acceso cerrado...). Integración con AquaGo móvil. */
+    const val NO_ENTREGADA = "NO_ENTREGADA"
 }
 
 /**
@@ -36,7 +38,21 @@ data class Solicitud(
     val domicilio: String,
     val colonia: String,
     val estado: String,
-    val repartidor: String? = null
+    val repartidor: String? = null,
+    // --- Campos agregados en la integración con AquaGo móvil (todos opcionales: los JSON viejos siguen sirviendo) ---
+    /** Referencia del domicilio que escribe el ciudadano ("portón verde"). */
+    val referencia: String? = null,
+    /** Notas para el repartidor. */
+    val notas: String? = null,
+    /** Litros que el repartidor dejó al cerrar la entrega. */
+    val litrosEntregados: Int? = null,
+    /** Observación del repartidor (motivo de no entrega, etc.). */
+    val observacion: String? = null,
+    /** Lugar de la parada en la ruta del día (1, 2, 3...). Si falta, la ruta se ordena por hora. */
+    val orden: Int? = null,
+    /** Cuándo se creó y cuándo cambió por última vez (ISO-8601). Sirve para resolver conflictos de la sincronización. */
+    val creadaEn: String? = null,
+    val actualizadoEn: String? = null
 )
 
 /**
@@ -75,12 +91,15 @@ class SolicitudStore(private val file: File? = null, initial: List<Solicitud> = 
     @Synchronized
     fun all(): List<Solicitud> = items.sortedWith(compareByDescending<Solicitud> { it.dia }.thenByDescending { it.hora })
 
+    @Synchronized
+    fun find(id: String): Solicitud? = items.firstOrNull { it.id == id }
+
     fun of(username: String): List<Solicitud> = all().filter { it.username.equals(username, ignoreCase = true) }
 
     /** Entregas de un repartidor en un día, en el orden de la ruta (por hora). */
     fun route(repartidor: String, dia: String): List<Solicitud> =
         all().filter { it.repartidor.equals(repartidor, ignoreCase = true) && it.dia == dia && it.estado != EstadoSolicitud.CANCELADA }
-            .sortedBy { it.hora }
+            .sortedWith(compareBy<Solicitud>({ it.orden ?: Int.MAX_VALUE }, { it.hora }))
 
     private fun persist() {
         val target = file ?: return
