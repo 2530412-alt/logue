@@ -85,8 +85,14 @@ fun Application.configureCors(origins: List<String>) {
     }
 }
 
-fun corsOriginsFromEnvironment(env: Map<String, String> = System.getenv()): List<String> =
-    env["CORS_ORIGINS"].orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+fun corsOriginsFromEnvironment(env: Map<String, String> = System.getenv()): List<String> {
+    val lista = env["CORS_ORIGINS"].orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    if (lista.isEmpty()) return lista
+    // La app web se sirve desde este mismo servidor (/web). Detrás del proxy de Render el servidor no
+    // reconoce su propia dirección como "mismo origen", así que se agrega su URL pública (RENDER_EXTERNAL_URL).
+    val propia = env["RENDER_EXTERNAL_URL"]?.trim()?.trimEnd('/')?.takeIf { it.isNotEmpty() }
+    return if (propia != null && propia !in lista) lista + propia else lista
+}
 
 /**
  * Errores que no atrapa cada ruta. Ktor deja de leer una foto al pasar el límite de
