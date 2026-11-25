@@ -5,6 +5,7 @@ import io.ktor.http.content.PartData
 import io.ktor.http.content.forEachPart
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
+import io.ktor.server.http.content.*
 import io.ktor.server.plugins.ratelimit.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
@@ -49,6 +50,13 @@ fun Application.configureRouting(
     routing {
         get("/") {
             call.respondText("Logue backend funcionando prueba")
+        }
+
+        // App web de AquaGo: la misma app de Kotlin Multiplatform compilada para el navegador (Wasm).
+        // Los archivos los genera PUBLICAR_WEB.bat en resources/web. Misma dirección que la API: no necesita CORS.
+        get("/web") { call.respondRedirect("/web/") }
+        staticResources("/web", "web") {
+            contentType { url -> if (url.path.endsWith(".wasm")) ContentType("application", "wasm") else null }
         }
 
         // GET /salud -> estado, plataforma y commit desplegado (SRV-13). Público: lo usa la app para despertar al servidor
