@@ -35,7 +35,7 @@ fun ApiResult<*>.mensajeDeError(): String? = when (this) {
     ApiResult.SinConexion -> MENSAJE_SIN_CONEXION
 }
 
-private suspend fun <T> peticion(
+internal suspend fun <T> peticion(
     hacer: suspend () -> HttpResponse,
     leer: suspend (HttpResponse) -> T
 ): ApiResult<T> = try {

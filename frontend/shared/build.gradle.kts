@@ -67,6 +67,8 @@ kotlin {
             // appcompat trae un fragment moderno; el de biometric solo es viejo y chocaría con activity 1.13
             implementation(libs.androidx.appcompat)
             implementation(libs.androidx.biometric)
+            // Integración AquaGo: subir en segundo plano los cambios hechos sin conexión
+            implementation("androidx.work:work-runtime-ktx:2.10.0")
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)

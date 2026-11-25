@@ -44,6 +44,60 @@ fun LoginScreen(
     // Despierta al servidor mientras el usuario escribe (API-08). Render gratuito tarda ~1 min en despertar.
     LaunchedEffect(Unit) { despertarServidor() }
 
+    // ---- Solo página web (panel del delegado): reCAPTCHA y «Iniciar sesión con Google» ----
+    val esWeb = Plataforma.esWeb
+    var configWeb by remember { mutableStateOf(ConfigWeb()) }
+    var captcha by remember { mutableStateOf<String?>(null) }
+    var credencialGoogle by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { if (esWeb) configWeb = obtenerConfigWeb() }
+    LaunchedEffect(configWeb.recaptchaSiteKey) {
+        if (configWeb.recaptchaSiteKey.isNotBlank()) {
+            Plataforma.casillaCaptcha?.invoke(configWeb.recaptchaSiteKey) { respuesta -> captcha = respuesta.ifBlank { null } }
+        }
+    }
+    LaunchedEffect(configWeb.googleClientId) {
+        if (configWeb.googleClientId.isNotBlank()) {
+            Plataforma.botonGoogle?.invoke(configWeb.googleClientId) { credencial -> credencialGoogle = credencial }
+        }
+    }
+    val pideCaptcha = esWeb && configWeb.recaptchaSiteKey.isNotBlank()
+
+    /** Muestra el resultado del login (contraseña o Google). Si falló, el captcha se vuelve a pedir. */
+    fun mostrar(result: LoginResult) {
+        if (result is LoginResult.Success) {
+            onLoggedIn(result.session)
+            return
+        }
+        error = when (result) {
+            LoginResult.InvalidCredentials -> "Usuario o contraseña incorrectos"
+            is LoginResult.Locked -> lockedMessage(result.retryAfterSeconds)
+            is LoginResult.AccountBlocked -> result.mensaje
+            is LoginResult.Rechazo -> result.mensaje
+            LoginResult.ServerError -> "El servidor tuvo un problema. Intenta de nuevo"
+            LoginResult.NetworkError -> MENSAJE_SIN_CONEXION
+            is LoginResult.Success -> null
+        }
+        if (pideCaptcha) {
+            captcha = null
+            Plataforma.reiniciarCaptcha()
+        }
+    }
+
+    // El botón de Google entregó la credencial: se valida en el servidor
+    LaunchedEffect(credencialGoogle) {
+        val credencial = credencialGoogle ?: return@LaunchedEffect
+        credencialGoogle = null
+        if (pideCaptcha && captcha == null) {
+            error = "Primero marca la casilla «No soy un robot»"
+            return@LaunchedEffect
+        }
+        loading = true
+        error = null
+        val result = loginConGoogle(credencial, captcha)
+        loading = false
+        mostrar(result)
+    }
+
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = AppColors.Accent,
         unfocusedBorderColor = AppColors.Border,
@@ -103,11 +157,16 @@ fun LoginScreen(
             ) {
                 Text("¿Olvidaste tu contraseña?", color = AppColors.Accent, style = MaterialTheme.typography.bodySmall)
             }
+            if (pideCaptcha) {
+                // Aquí se dibuja la casilla «No soy un robot» de Google (elemento HTML encima del lienzo)
+                ZonaWeb("captcha", 80.dp)
+            }
             Spacer(Modifier.height(6.dp))
             Button(
                 onClick = {
                     // 1) Validar los campos; 2) llamar al backend; 3) mostrar el mensaje que corresponda.
                     val validation = validateCredentials(user, pass)
+                        ?: if (pideCaptcha && captcha == null) "Marca la casilla «No soy un robot»" else null
                     if (validation != null) {
                         error = validation
                     } else {
@@ -116,18 +175,11 @@ fun LoginScreen(
                             error = null
                             // Si tarda más de 4 s, casi seguro el servidor estaba dormido: se avisa en lugar de parecer trabado
                             val aviso = launch { delay(4_000); waking = true }
-                            val result = login(user, pass)
+                            val result = login(user, pass, captcha)
                             aviso.cancel()
                             waking = false
-                            when (result) {
-                                is LoginResult.Success -> onLoggedIn(result.session)
-                                LoginResult.InvalidCredentials -> error = "Usuario o contraseña incorrectos"
-                                is LoginResult.Locked -> error = lockedMessage(result.retryAfterSeconds)
-                                is LoginResult.AccountBlocked -> error = result.mensaje
-                                LoginResult.ServerError -> error = "El servidor tuvo un problema. Intenta de nuevo"
-                                LoginResult.NetworkError -> error = MENSAJE_SIN_CONEXION
-                            }
                             loading = false
+                            mostrar(result)
                         }
                     }
                 },
@@ -156,15 +208,29 @@ fun LoginScreen(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+            if (esWeb && configWeb.googleClientId.isNotBlank()) {
+                Spacer(Modifier.height(14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    HorizontalDivider(Modifier.weight(1f), color = AppColors.Border)
+                    Text("  o  ", color = AppColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+                    HorizontalDivider(Modifier.weight(1f), color = AppColors.Border)
+                }
+                Spacer(Modifier.height(10.dp))
+                // Botón oficial «Iniciar sesión con Google»
+                ZonaWeb("google", 44.dp)
+            }
             error?.let {
                 Spacer(Modifier.height(10.dp))
                 Text(it, color = AppColors.Red, style = MaterialTheme.typography.bodyMedium)
             }
         }
 
-        // Registro de ciudadanos (repartidores y administradores los da de alta el delegado)
+        // Registro de ciudadanos (repartidores y administradores los da de alta el delegado).
+        // La página web es solo para el delegado, así que ahí no se ofrece.
         Spacer(Modifier.height(16.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        if (esWeb) {
+            Text("Panel del delegado", color = AppColors.TextMuted, style = MaterialTheme.typography.bodyMedium)
+        } else Row(verticalAlignment = Alignment.CenterVertically) {
             Text("¿No tienes cuenta?", color = AppColors.TextMuted, style = MaterialTheme.typography.bodyMedium)
             TextButton(onClick = onCreateAccount) {
                 Text("Regístrate", color = AppColors.Accent, fontWeight = FontWeight.SemiBold)

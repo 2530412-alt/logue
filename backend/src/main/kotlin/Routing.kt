@@ -41,8 +41,11 @@ fun Application.configureRouting(
     codeSender: CodeSender = LogCodeSender(),
     solicitudes: SolicitudStore = defaultSolicitudStore(),
     clock: java.time.Clock = java.time.Clock.systemUTC(),
-    syncLog: SyncLog = defaultSyncLog()
+    syncLog: SyncLog = defaultSyncLog(),
+    integraciones: Integraciones = Integraciones()
 ) {
+    // Servicio de correo (Correo.kt): avisos de solicitudes, cuenta aprobada, códigos y reportes
+    val avisos = Avisos(integraciones.correos, users)
     routing {
         get("/") {
             call.respondText("Logue backend funcionando prueba")
@@ -81,6 +84,9 @@ fun Application.configureRouting(
                     return@post
                 }
 
+                // reCAPTCHA «No soy un robot»: solo en la página web (Google.kt)
+                if (!call.captchaAprobado(integraciones.captcha, req.captcha)) return@post
+
                 // Mientras la cuenta esté bloqueada ni siquiera se revisa la contraseña (USR-20)
                 attempts.secondsLocked(username)?.let { seconds ->
                     call.response.header(HttpHeaders.RetryAfter, seconds.toString())
@@ -114,15 +120,18 @@ fun Application.configureRouting(
         }
 
         // Registro y recuperación de contraseña: públicos, con el mismo límite de peticiones que el login
-        cuentasPublicas(users, pagos, remote, recovery, codeSender)
+        cuentasPublicas(users, pagos, remote, recovery, codeSender, avisos, integraciones.verificaciones)
+        // Iniciar sesión con Google, verificar correo y configuración pública de la página web (CorreoGoogleRoutes.kt)
+        correoGooglePublicas(users, tokens, attempts, integraciones, avisos)
 
         // Todo lo de aquí adentro exige "Authorization: Bearer <token>" (USR-16); sin token responde 401
         authenticate(AUTH_JWT) {
 
-            cuentasAutenticadas(users)
+            cuentasAutenticadas(users, avisos)
+            correoAutenticadas(users, solicitudes, integraciones, avisos, clock)
             solicitudesRoutes(solicitudes, clock)
             // Integracion AquaGo: pedir/cancelar pipa, asignar rutas, cerrar entregas, /sync y usuarios (Operacion.kt)
-            operacionRoutes(solicitudes, users, syncLog, clock)
+            operacionRoutes(solicitudes, users, syncLog, clock, avisos)
 
             // POST /pagos-prediales (multipart: folio opcional, foto). El usuario sale del token, no del formulario.
             //   -> 201 + PagoPredial | 400 datos inválidos | 401 sin sesión | 403 no es ciudadano

@@ -36,6 +36,8 @@ sealed interface LoginResult {
     data class Locked(val retryAfterSeconds: Long?) : LoginResult
     /** 403: la cuenta está en revisión (USR-11) o desactivada. [mensaje] viene del servidor. */
     data class AccountBlocked(val mensaje: String) : LoginResult
+    /** 400, 404 o 503 con un mensaje del servidor (captcha sin marcar, correo sin cuenta, Google no configurado). */
+    data class Rechazo(val mensaje: String) : LoginResult
     data object ServerError : LoginResult
     data object NetworkError : LoginResult
 }
@@ -55,10 +57,17 @@ fun lockedMessage(retryAfterSeconds: Long?): String {
 }
 
 /** Llama a `POST /login`. Nunca lanza excepciones: siempre devuelve un [LoginResult]. */
-suspend fun login(username: String, password: String): LoginResult = try {
-    val res = client.post("$BASE_URL/login") {
+suspend fun login(username: String, password: String, captcha: String? = null): LoginResult =
+    intentarLogin("login") { setBody(LoginRequest(username.trim(), password, captcha)) }
+
+/** `POST /login/google` con el ID token del botón de Google (página web del delegado). */
+suspend fun loginConGoogle(credential: String, captcha: String? = null): LoginResult =
+    intentarLogin("login/google") { setBody(LoginGoogle(credential, captcha)) }
+
+private suspend fun intentarLogin(ruta: String, cuerpo: HttpRequestBuilder.() -> Unit): LoginResult = try {
+    val res = client.post("$BASE_URL/$ruta") {
         contentType(ContentType.Application.Json)
-        setBody(LoginRequest(username.trim(), password))
+        cuerpo()
         timeout { requestTimeoutMillis = ESPERA_SERVIDOR_DORMIDO_MS }
     }
     when (res.status) {
@@ -66,6 +75,8 @@ suspend fun login(username: String, password: String): LoginResult = try {
         HttpStatusCode.Unauthorized -> LoginResult.InvalidCredentials
         HttpStatusCode.TooManyRequests -> LoginResult.Locked(res.headers[HttpHeaders.RetryAfter]?.toLongOrNull())
         HttpStatusCode.Forbidden -> LoginResult.AccountBlocked(res.bodyAsText())
+        HttpStatusCode.BadRequest, HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable ->
+            LoginResult.Rechazo(res.bodyAsText().ifBlank { "No se pudo iniciar sesión" })
         else -> LoginResult.ServerError
     }
 } catch (e: CancellationException) {
@@ -88,4 +99,14 @@ suspend fun despertarServidor() {
     } catch (e: Throwable) {
         // Sin conexión: el login mostrará el mensaje cuando el usuario lo intente
     }
+}
+
+/** `GET /config/web`. Si falla, sin Google ni captcha (el login normal sigue funcionando). */
+suspend fun obtenerConfigWeb(): ConfigWeb = try {
+    client.get("$BASE_URL/config/web") { timeout { requestTimeoutMillis = ESPERA_SERVIDOR_DORMIDO_MS } }
+        .let { if (it.status == HttpStatusCode.OK) it.body<ConfigWeb>() else ConfigWeb() }
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Throwable) {
+    ConfigWeb()
 }

@@ -22,3 +22,7 @@ local.properties
 
 # Fotos de pagos prediales guardadas por el backend
 backend/uploads/
+
+# Salidas de los scripts .bat (registros locales)
+resultado_*.txt
+_revision/

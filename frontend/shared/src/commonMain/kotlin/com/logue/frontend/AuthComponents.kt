@@ -52,7 +52,9 @@ fun authFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedBorderColor = AppColors.Border,
     focusedLabelColor = AppColors.Accent,
     unfocusedLabelColor = AppColors.TextMuted,
-    cursorColor = AppColors.Accent
+    cursorColor = AppColors.Accent,
+    focusedContainerColor = AppColors.Surface,
+    unfocusedContainerColor = AppColors.Surface
 )
 
 /** Logo de AquaGo: cuadro de color con las iniciales. */

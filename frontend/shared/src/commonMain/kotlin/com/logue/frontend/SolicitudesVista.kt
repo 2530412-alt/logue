@@ -15,6 +15,7 @@ fun etiquetaEstado(estado: String): String = when (estado) {
     EstadoSolicitud.EN_CAMINO -> "En camino"
     EstadoSolicitud.ENTREGADA -> "Entregada"
     EstadoSolicitud.CANCELADA -> "Cancelada"
+    EstadoSolicitud.NO_ENTREGADA -> "No entregada"
     else -> estado
 }
 
@@ -25,6 +26,7 @@ fun colorEstado(estado: String): Color = when (estado) {
     EstadoSolicitud.EN_CAMINO -> AppColors.Blue
     EstadoSolicitud.ENTREGADA -> AppColors.Green
     EstadoSolicitud.CANCELADA -> AppColors.Red
+    EstadoSolicitud.NO_ENTREGADA -> AppColors.Red
     else -> AppColors.TextMuted
 }
 

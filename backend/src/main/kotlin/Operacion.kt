@@ -346,7 +346,7 @@ class Operaciones(
 private fun JsonObject.texto(clave: String): String? = (this[clave] as? JsonPrimitive)?.contentOrNull
 private fun JsonObject.entero(clave: String): Int? = (this[clave] as? JsonPrimitive)?.intOrNull
 
-private fun User.aPerfil() = Perfil(username, role, nombre, telefono, calle, colonia, estado)
+private fun User.aPerfil() = toPerfil()
 
 // ---------------------------------------------------------------------------------------------------
 //  Rutas (todas dentro de authenticate(AUTH_JWT))
@@ -369,9 +369,16 @@ fun Route.operacionRoutes(
     solicitudes: SolicitudStore,
     users: UserRepository,
     syncLog: SyncLog,
-    clock: Clock = Clock.systemUTC()
+    clock: Clock = Clock.systemUTC(),
+    avisos: Avisos? = null
 ) {
     val ops = Operaciones(solicitudes, users, clock)
+
+    /** Responde y, si el estatus cambió, avisa al ciudadano por correo (Correo.kt). */
+    suspend fun ApplicationCall.responderYAvisar(r: Resultado, antes: String?) {
+        if (r.ok && r.solicitud != null && r.solicitud.estado != antes) avisos?.solicitudActualizada(r.solicitud)
+        responder(r)
+    }
 
     // POST /solicitudes {dia, capacidadLitros, hora?, domicilio?, colonia?, referencia?, notas?, id?}
     //   -> 201 + Solicitud (RECIBIDA) | 200 si ya existía con ese id | 400 datos inválidos | 403 no es ciudadano
@@ -384,14 +391,18 @@ fun Route.operacionRoutes(
     // PATCH /solicitudes/{id}/cancelar -> 200 + Solicitud | 404 | 409 ya va en camino
     patch("/solicitudes/{id}/cancelar") {
         if (!call.requireRole(Roles.CIUDADANO, Roles.ADMIN)) return@patch
-        call.responder(ops.cancelar(call.session, call.parameters["id"].orEmpty()))
+        val id = call.parameters["id"].orEmpty()
+        val antes = solicitudes.find(id)?.estado
+        call.responderYAvisar(ops.cancelar(call.session, id), antes)
     }
 
     // PATCH /solicitudes/{id}/asignar {repartidor, dia?, hora?, orden?} -> 200 + Solicitud (PROGRAMADA) | 400 | 404 | 409
     patch("/solicitudes/{id}/asignar") {
         if (!call.requireRole(Roles.ADMIN)) return@patch
         val req = call.leer<Asignacion>() ?: return@patch
-        call.responder(ops.asignar(call.parameters["id"].orEmpty(), req))
+        val id = call.parameters["id"].orEmpty()
+        val antes = solicitudes.find(id)?.estado
+        call.responderYAvisar(ops.asignar(id, req), antes)
     }
 
     // PATCH /solicitudes/{id}/desasignar -> 200 + Solicitud (RECIBIDA) | 404 | 409 ya inició
@@ -404,7 +415,9 @@ fun Route.operacionRoutes(
     patch("/entregas/{id}") {
         if (!call.requireRole(Roles.OPERADOR)) return@patch
         val req = call.leer<CambioEntrega>() ?: return@patch
-        call.responder(ops.actualizarEntrega(call.session.username, call.parameters["id"].orEmpty(), req))
+        val id = call.parameters["id"].orEmpty()
+        val antes = solicitudes.find(id)?.estado
+        call.responderYAvisar(ops.actualizarEntrega(call.session.username, id, req), antes)
     }
 
     // POST /sync {operaciones: [...]} -> 200 + {resultados, servidorEn}
@@ -421,8 +434,10 @@ fun Route.operacionRoutes(
             if (syncLog.contains(op.id)) {
                 ResultadoSync(op.id, true, "Ya se había aplicado")
             } else {
+                val antes = solicitudes.find(op.entidadId)?.estado
                 val r = ops.aplicar(session, op)
                 syncLog.add(op.id)
+                if (r.ok && r.solicitud != null && r.solicitud.estado != antes) avisos?.solicitudActualizada(r.solicitud)
                 ResultadoSync(op.id, r.ok, if (r.ok) null else r.mensaje)
             }
         }

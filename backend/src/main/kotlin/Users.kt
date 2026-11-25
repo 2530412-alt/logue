@@ -42,6 +42,13 @@ interface UserRepository {
 
     /** Todas las cuentas, para el panel del delegado (integración con AquaGo web). */
     fun all(): List<User> = emptyList()
+
+    /** Cuenta con ese correo (sin distinguir mayúsculas). Lo usan la recuperación y «Iniciar sesión con Google». */
+    fun findByCorreo(correo: String): User? {
+        val c = correo.trim()
+        if (c.isEmpty()) return null
+        return all().firstOrNull { it.correo.isNotBlank() && it.correo.equals(c, ignoreCase = true) }
+    }
 }
 
 /**

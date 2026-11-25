@@ -1,6 +1,7 @@
 package com.logue.frontend
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -86,6 +87,9 @@ private fun PerfilFormulario(session: LoginResponse, perfil: Perfil, onSessionEx
         )
     }
 
+    // Servicio de correo: avisos de tus pipas y recuperar la contraseña por correo
+    TarjetaCorreo(session, guardado, onActualizado = { guardado = it }, onSessionExpired = onSessionExpired)
+
     AppCard {
         FormSectionTitle("Domicilio")
         AquaGoTextField(
@@ -134,4 +138,98 @@ private fun PerfilFormulario(session: LoginResponse, perfil: Perfil, onSessionEx
     }
     FormError(error)
     info?.let { Text(it, color = AppColors.Green, style = MaterialTheme.typography.bodySmall) }
+}
+
+/** Correo de la cuenta: guardarlo, pedir el código y verificarlo. */
+@Composable
+private fun TarjetaCorreo(
+    session: LoginResponse,
+    perfil: Perfil,
+    onActualizado: (Perfil) -> Unit,
+    onSessionExpired: () -> Unit
+) {
+    var correo by remember(perfil.correo) { mutableStateOf(perfil.correo) }
+    var codigo by remember { mutableStateOf("") }
+    var esperandoCodigo by remember { mutableStateOf(false) }
+    var mensaje by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var trabajando by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun <T> manejar(r: ApiResult<T>, alOk: (T) -> Unit) {
+        when (r) {
+            is ApiResult.Ok -> alOk(r.valor)
+            ApiResult.SesionVencida -> onSessionExpired()
+            else -> mensaje = (r.mensajeDeError() ?: "No se pudo completar") to false
+        }
+    }
+
+    AppCard {
+        FormSectionTitle("Correo electrónico")
+        AquaGoTextField(
+            value = correo,
+            onValueChange = { correo = it.trim().take(100) },
+            label = "Correo",
+            keyboardType = KeyboardType.Email,
+            supportingText = when {
+                perfil.correo.isBlank() -> "Para recibir avisos de tus pipas y recuperar tu contraseña"
+                perfil.correoVerificado -> "Verificado ✓"
+                else -> "Sin verificar: pide un código y escríbelo abajo"
+            }
+        )
+        Spacer(Modifier.height(10.dp))
+        if (!correo.equals(perfil.correo, ignoreCase = true)) {
+            PrimaryButton(if (trabajando) "Guardando..." else "Guardar correo", enabled = !trabajando) {
+                trabajando = true
+                scope.launch {
+                    manejar(guardarPerfil(session.token, PerfilCambio(correo = correo))) {
+                        onActualizado(it)
+                        mensaje = (if (correo.isBlank()) "Correo eliminado" else "Correo guardado. Ahora verifícalo") to true
+                    }
+                    trabajando = false
+                }
+            }
+        } else if (perfil.correo.isNotBlank() && !perfil.correoVerificado) {
+            OutlinedButton(
+                onClick = {
+                    trabajando = true
+                    scope.launch {
+                        manejar(pedirCodigoCorreo(session.token)) {
+                            esperandoCodigo = true
+                            mensaje = "Te enviamos un código a ${perfil.correo}" to true
+                        }
+                        trabajando = false
+                    }
+                },
+                enabled = !trabajando,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (esperandoCodigo) "Enviar otro código" else "Enviarme un código", color = AppColors.Accent) }
+            if (esperandoCodigo) {
+                Spacer(Modifier.height(10.dp))
+                AquaGoTextField(
+                    value = codigo,
+                    onValueChange = { codigo = it.filter(Char::isDigit).take(6) },
+                    label = "Código de 6 dígitos",
+                    keyboardType = KeyboardType.Number
+                )
+                Spacer(Modifier.height(10.dp))
+                PrimaryButton("Verificar correo", enabled = codigo.length == 6 && !trabajando) {
+                    trabajando = true
+                    scope.launch {
+                        manejar(verificarCorreo(session.token, codigo)) {
+                            onActualizado(it)
+                            esperandoCodigo = false
+                            codigo = ""
+                            mensaje = "¡Listo! Tu correo quedó verificado" to true
+                        }
+                        trabajando = false
+                    }
+                }
+            }
+        }
+        mensaje?.let { (texto, ok) ->
+            Spacer(Modifier.height(8.dp))
+            Text(texto, color = if (ok) AppColors.Green else AppColors.Red, style = MaterialTheme.typography.bodySmall)
+        }
+    }
 }

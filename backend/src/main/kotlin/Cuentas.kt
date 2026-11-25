@@ -117,11 +117,16 @@ class RecoveryCodes(
     }
 }
 
-/** Busca la cuenta por usuario o por teléfono de 10 dígitos. */
+/** Busca la cuenta por usuario, por teléfono de 10 dígitos o por correo verificado. */
 private fun UserRepository.findByAccount(account: String): User? {
     val value = account.trim()
     if (value.isEmpty()) return null
-    return find(value) ?: if (value.all { it.isDigit() }) findByPhone(value) else null
+    return find(value) ?: when {
+        value.all { it.isDigit() } -> findByPhone(value)
+        // Integración correo: también se puede recuperar con el correo, si ya está verificado
+        '@' in value -> findByCorreo(value)?.takeIf { it.correoVerificado }
+        else -> null
+    }
 }
 
 // ------------------------------------------------------------------------------------------
@@ -154,7 +159,9 @@ fun Route.cuentasPublicas(
     pagos: PagoStore,
     remote: RemoteCopier?,
     recovery: RecoveryCodes,
-    codeSender: CodeSender
+    codeSender: CodeSender,
+    avisos: Avisos? = null,
+    verificaciones: RecoveryCodes = RecoveryCodes()
 ) {
     rateLimit(ACCOUNTS_LIMIT) {
 
@@ -181,11 +188,14 @@ fun Route.cuentasPublicas(
             val usuario = form.campos["usuario"].orEmpty().trim()
             val contrasena = form.campos["contrasena"].orEmpty()
             val folio = form.campos["folio"].orEmpty().trim()
+            // Opcional: si viene, se manda un código para verificarlo (servicio de correo)
+            val correo = form.campos["correo"].orEmpty().trim()
             val foto = form.foto ?: ByteArray(0)
 
             val error = validarDatosPersonales(nombre, telefono, calle, colonia)
                 ?: validarUsuarioNuevo(usuario)
                 ?: validarContrasenaNueva(contrasena)
+                ?: (if (correo.isNotEmpty()) validarCorreo(correo) else null)
                 ?: when {
                     folio.length > 40 -> "El folio no puede pasar de 40 caracteres"
                     foto.isEmpty() -> "Adjunta tu comprobante de pago predial"
@@ -212,6 +222,10 @@ fun Route.cuentasPublicas(
                 call.respond(HttpStatusCode.Conflict, "Ese teléfono ya tiene una cuenta")
                 return@post
             }
+            if (correo.isNotEmpty() && users.findByCorreo(correo) != null) {
+                call.respond(HttpStatusCode.Conflict, "Ese correo ya tiene una cuenta")
+                return@post
+            }
 
             val cuenta = User(
                 username = usuario,
@@ -221,12 +235,16 @@ fun Route.cuentasPublicas(
                 telefono = telefono,
                 calle = calle,
                 colonia = colonia,
-                estado = EstadoCuenta.EN_REVISION
+                estado = EstadoCuenta.EN_REVISION,
+                correo = correo
             )
             if (!users.add(cuenta)) {
                 // Otro registro con el mismo usuario llegó un instante antes
                 call.respond(HttpStatusCode.Conflict, "Ese usuario ya existe, elige otro")
                 return@post
+            }
+            if (correo.isNotEmpty()) {
+                avisos?.codigoVerificacion(correo, nombre, verificaciones.issue(usuario))
             }
             val pago = pagos.save(usuario, folio, tipo, foto)
             call.copiarARemoto(pagos, remote, pago.id)
@@ -256,9 +274,12 @@ fun Route.cuentasPublicas(
             }
             val user = users.findByAccount(cuenta)
             if (user != null && user.telefono.isNotEmpty() && user.estado != EstadoCuenta.INACTIVA) {
-                codeSender.send(user.telefono, recovery.issue(user.username))
+                val codigo = recovery.issue(user.username)
+                codeSender.send(user.telefono, codigo)
+                // Servicio de correo: el mismo código también llega al correo, si está verificado
+                avisos?.codigoRecuperacion(user, codigo)
             }
-            call.respond(HttpStatusCode.Accepted, "Si la cuenta existe, enviamos un código al teléfono registrado")
+            call.respond(HttpStatusCode.Accepted, "Si la cuenta existe, enviamos un código al teléfono y al correo registrados")
         }
 
         // POST /recuperacion/confirmar {cuenta, codigo, contrasena} -> 204 contraseña cambiada | 400 código o datos inválidos
@@ -290,9 +311,9 @@ fun Route.cuentasPublicas(
 //  Rutas con sesión: perfil (USR-21) y activación de cuentas por el delegado (USR-11)
 // ------------------------------------------------------------------------------------------
 
-private fun User.toPerfil() = Perfil(username, role, nombre, telefono, calle, colonia, estado)
+internal fun User.toPerfil() = Perfil(username, role, nombre, telefono, calle, colonia, estado, correo, correoVerificado)
 
-fun Route.cuentasAutenticadas(users: UserRepository) {
+fun Route.cuentasAutenticadas(users: UserRepository, avisos: Avisos? = null) {
 
     // GET /usuarios/yo -> el perfil de la cuenta del token
     get("/usuarios/yo") {
@@ -314,7 +335,9 @@ fun Route.cuentasAutenticadas(users: UserRepository) {
         val telefono = cambio.telefono?.trim()
         val calle = cambio.calle?.trim()
         val colonia = cambio.colonia?.trim()
-        validarDatosPersonales(nombre, telefono, calle, colonia)?.let {
+        val correo = cambio.correo?.trim()
+        (validarDatosPersonales(nombre, telefono, calle, colonia)
+            ?: correo?.takeIf { it.isNotEmpty() }?.let { validarCorreo(it) })?.let {
             call.respond(HttpStatusCode.BadRequest, it)
             return@patch
         }
@@ -330,11 +353,22 @@ fun Route.cuentasAutenticadas(users: UserRepository) {
                 return@patch
             }
         }
+        val cambiaCorreo = correo != null && !correo.equals(actual.correo, ignoreCase = true)
+        if (cambiaCorreo && correo!!.isNotEmpty()) {
+            val otro = users.findByCorreo(correo)
+            if (otro != null && !otro.username.equals(actual.username, ignoreCase = true)) {
+                call.respond(HttpStatusCode.Conflict, "Ese correo ya tiene una cuenta")
+                return@patch
+            }
+        }
         val nuevo = actual.copy(
             nombre = nombre ?: actual.nombre,
             telefono = telefono ?: actual.telefono,
             calle = calle ?: actual.calle,
-            colonia = colonia ?: actual.colonia
+            colonia = colonia ?: actual.colonia,
+            // Un correo nuevo hay que volver a verificarlo (POST /usuarios/yo/correo/codigo)
+            correo = if (cambiaCorreo) correo!! else actual.correo,
+            correoVerificado = if (cambiaCorreo) false else actual.correoVerificado
         )
         users.update(nuevo)
         call.respond(nuevo.toPerfil())
@@ -363,6 +397,8 @@ fun Route.cuentasAutenticadas(users: UserRepository) {
         }
         val nuevo = objetivo.copy(estado = cambio.estado)
         users.update(nuevo)
+        // Servicio de correo: avisar al ciudadano que ya puede entrar
+        if (cambio.estado == EstadoCuenta.ACTIVA && objetivo.estado != EstadoCuenta.ACTIVA) avisos?.cuentaActivada(nuevo)
         call.respond(nuevo.toPerfil())
     }
 }

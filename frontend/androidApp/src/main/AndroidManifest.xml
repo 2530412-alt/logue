@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Integración AquaGo: saber si hay red y avisar con notificaciones locales -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Android 17+: necesario para conectarse a 10.0.2.2 (backend local visto desde el emulador) -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
@@ -9,8 +12,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- allowBackup en false: la app guarda la sesión (token) para funcionar sin conexión y no debe copiarse a respaldos -->
     <application
-            android:allowBackup="true"
+            android:allowBackup="false"
             android:networkSecurityConfig="@xml/network_security_config"
             android:icon="@mipmap/ic_launcher"
             android:label="examen"

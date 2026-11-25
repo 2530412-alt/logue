@@ -24,7 +24,12 @@ data class User(
     val calle: String = "",
     val colonia: String = "",
     /** ACTIVA, EN_REVISION (registro nuevo, USR-11) o INACTIVA. Ver [EstadoCuenta]. */
-    val estado: String = EstadoCuenta.ACTIVA
+    val estado: String = EstadoCuenta.ACTIVA,
+    // --- Servicio de correo e inicio con Google (opcionales: los users.json anteriores siguen sirviendo) ---
+    /** Correo electrónico de la cuenta (avisos, códigos y «Iniciar sesión con Google»). */
+    val correo: String = "",
+    /** `true` cuando el usuario escribió el código que le llegó al correo (o entró con esa cuenta de Google). */
+    val correoVerificado: Boolean = false
 )
 
 /** Estados de una cuenta. Una cuenta nueva queda EN_REVISION hasta que el delegado valida su comprobante (USR-11). */
@@ -47,7 +52,9 @@ data class Perfil(
     val telefono: String,
     val calle: String,
     val colonia: String,
-    val estado: String
+    val estado: String,
+    val correo: String = "",
+    val correoVerificado: Boolean = false
 )
 
 /** Cuerpo de `PATCH /usuarios/yo`: solo se cambian los campos que vengan. */
@@ -56,7 +63,9 @@ data class PerfilCambio(
     val nombre: String? = null,
     val telefono: String? = null,
     val calle: String? = null,
-    val colonia: String? = null
+    val colonia: String? = null,
+    /** Al cambiar el correo deja de estar verificado y se manda un código nuevo. Vacío = quitarlo. */
+    val correo: String? = null
 )
 
 /** Cuerpo de `PATCH /usuarios/{username}/estado` (solo el delegado). */
@@ -71,8 +80,12 @@ data class RecuperacionSolicitud(val cuenta: String)
 @Serializable
 data class RecuperacionConfirmacion(val cuenta: String, val codigo: String, val contrasena: String)
 
+/**
+ * [captcha]: respuesta de reCAPTCHA ("No soy un robot"). La exige el servidor solo a los
+ * navegadores (la app web), si la variable RECAPTCHA_SECRET está configurada. Ver Google.kt.
+ */
 @Serializable
-data class LoginRequest(val username: String, val password: String)
+data class LoginRequest(val username: String, val password: String, val captcha: String? = null)
 
 /**
  * Respuesta de `POST /login`. La app guarda el [token] y lo manda en cada petición como

@@ -28,7 +28,7 @@ private val SessionSaver = Saver<LoginResponse?, String>(
 private val AuthScreenSaver = Saver<AuthScreen, String>(save = { it.name }, restore = { AuthScreen.valueOf(it) })
 
 /** Pantallas a las que se llega desde la pantalla principal de cada rol. */
-enum class SubScreen { HOME, PAGO_PREDIAL, PAGOS, PERFIL }
+enum class SubScreen { HOME, PAGO_PREDIAL, PAGOS, PERFIL, PEDIR_PIPA }
 
 private val SubScreenSaver = Saver<SubScreen, String>(save = { it.name }, restore = { SubScreen.valueOf(it) })
 
@@ -46,11 +46,15 @@ private val ANCHO_MAXIMO_CONTENIDO = 1080.dp
 @Composable
 fun App() {
     AquaGoTheme {
-        var session by rememberSaveable(stateSaver = SessionSaver) { mutableStateOf<LoginResponse?>(null) }
+        // La sesión también se guarda en el teléfono (Offline) para poder abrir la app sin señal;
+        // se descarta sola cuando vence el token (12 h).
+        var session by rememberSaveable(stateSaver = SessionSaver) { mutableStateOf(Offline.sesionGuardada()) }
         var authScreen by rememberSaveable(stateSaver = AuthScreenSaver) { mutableStateOf(AuthScreen.LOGIN) }
         var sub by rememberSaveable(stateSaver = SubScreenSaver) { mutableStateOf(SubScreen.HOME) }
         var loginMessage by remember { mutableStateOf<String?>(null) }
+        var avisoCiudadano by remember { mutableStateOf<AvisoPantalla?>(null) }
         val logout = {
+            Offline.borrarSesion()
             session = null
             authScreen = AuthScreen.LOGIN
             sub = SubScreen.HOME
@@ -69,12 +73,15 @@ fun App() {
             contentColor = AppColors.TextPrimary
         ) {
             Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
-                Box(Modifier.widthIn(max = ANCHO_MAXIMO_CONTENIDO).fillMaxSize()) {
+                // El panel web del delegado usa toda la pantalla (menú lateral + contenido)
+                val anchoMaximo = if (Plataforma.esWeb && current?.role == Roles.ADMIN && sub == SubScreen.HOME) 1600.dp else ANCHO_MAXIMO_CONTENIDO
+                Box(Modifier.widthIn(max = anchoMaximo).fillMaxSize()) {
                     if (current == null) {
                         when (authScreen) {
                             AuthScreen.LOGIN -> LoginScreen(
                                 onLoggedIn = {
                                     loginMessage = null
+                                    Offline.guardarSesion(it)
                                     session = it
                                 },
                                 onCreateAccount = { authScreen = AuthScreen.REGISTER },
@@ -89,6 +96,19 @@ fun App() {
                         when {
                             current.role !in setOf(Roles.CIUDADANO, Roles.OPERADOR, Roles.ADMIN) ->
                                 UnknownRoleScreen(current.role, logout)
+                            // El delegado no tiene app de teléfono: usa el panel web
+                            current.role == Roles.ADMIN && Plataforma.esAppMovil ->
+                                AdminSoloWebScreen(current, logout)
+                            // Y la página web es solo para el delegado
+                            current.role != Roles.ADMIN && Plataforma.esWeb ->
+                                SoloDelegadoWebScreen(current, logout)
+                            sub == SubScreen.PEDIR_PIPA && current.role == Roles.CIUDADANO ->
+                                PedirPipaScreen(
+                                    current,
+                                    onBack = home,
+                                    onEnviada = { avisoCiudadano = it; sub = SubScreen.HOME },
+                                    onSessionExpired = sessionExpired
+                                )
                             sub == SubScreen.PERFIL ->
                                 PerfilScreen(current, onBack = home, onSessionExpired = sessionExpired)
                             sub == SubScreen.PAGOS ->
@@ -100,17 +120,21 @@ fun App() {
                                 onPagoPredial = { sub = SubScreen.PAGO_PREDIAL },
                                 onHistorialPagos = { sub = SubScreen.PAGOS },
                                 onPerfil = { sub = SubScreen.PERFIL },
-                                onSessionExpired = sessionExpired
+                                onSessionExpired = sessionExpired,
+                                onPedirPipa = { sub = SubScreen.PEDIR_PIPA },
+                                avisoInicial = avisoCiudadano,
+                                onAvisoVisto = { avisoCiudadano = null }
                             )
                             current.role == Roles.OPERADOR -> OperadorScreen(
                                 current, logout,
                                 onPerfil = { sub = SubScreen.PERFIL },
                                 onSessionExpired = sessionExpired
                             )
-                            else -> AdminScreen(
+                            // Panel web del delegado (PanelDelegado.kt)
+                            else -> PanelDelegado(
                                 current, logout,
-                                onComprobantes = { sub = SubScreen.PAGOS },
                                 onPerfil = { sub = SubScreen.PERFIL },
+                                onComprobantes = { sub = SubScreen.PAGOS },
                                 onSessionExpired = sessionExpired
                             )
                         }

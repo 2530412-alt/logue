@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 /** Cuerpo que se envía a `POST /login`. */
 @Serializable
-data class LoginRequest(val username: String, val password: String)
+data class LoginRequest(val username: String, val password: String, val captcha: String? = null)
 
 /**
  * Respuesta del backend cuando las credenciales son correctas. El [token] se manda en cada
@@ -37,7 +37,10 @@ data class Perfil(
     val telefono: String = "",
     val calle: String = "",
     val colonia: String = "",
-    val estado: String = ""
+    val estado: String = "",
+    // Servicio de correo (opcionales: un servidor anterior no los manda)
+    val correo: String = "",
+    val correoVerificado: Boolean = false
 )
 
 /** Cuerpo de `PATCH /usuarios/yo`: el servidor cambia solo los campos que lleguen. */
@@ -46,7 +49,9 @@ data class PerfilCambio(
     val nombre: String? = null,
     val telefono: String? = null,
     val calle: String? = null,
-    val colonia: String? = null
+    val colonia: String? = null,
+    /** Al cambiarlo hay que volver a verificarlo con el código que llega por correo. */
+    val correo: String? = null
 )
 
 @Serializable
@@ -69,7 +74,17 @@ data class Solicitud(
     val domicilio: String,
     val colonia: String,
     val estado: String,
-    val repartidor: String? = null
+    val repartidor: String? = null,
+    // --- Integración AquaGo (opcionales: si el servidor no los manda, la app funciona igual) ---
+    val referencia: String? = null,
+    val notas: String? = null,
+    val litrosEntregados: Int? = null,
+    val observacion: String? = null,
+    val orden: Int? = null,
+    val creadaEn: String? = null,
+    val actualizadoEn: String? = null,
+    /** Solo en el teléfono: el cambio todavía no llega al servidor (se hizo sin conexión). */
+    val pendienteSync: Boolean = false
 )
 
 /** Estados de una solicitud (deben coincidir con `EstadoSolicitud` del backend). */
@@ -80,6 +95,8 @@ object EstadoSolicitud {
     const val EN_CAMINO = "EN_CAMINO"
     const val ENTREGADA = "ENTREGADA"
     const val CANCELADA = "CANCELADA"
+    /** El repartidor llegó pero no pudo entregar. */
+    const val NO_ENTREGADA = "NO_ENTREGADA"
 }
 
 /**
@@ -91,3 +108,22 @@ object Roles {
     const val OPERADOR = "OPERADOR"
     const val ADMIN = "ADMIN"
 }
+
+/** `POST /login/google`: el ID token que da el botón de Google y la respuesta del captcha. */
+@Serializable
+data class LoginGoogle(val credential: String, val captcha: String? = null)
+
+/** `GET /config/web`: claves PÚBLICAS para el botón de Google y el captcha (vacías = no configurado). */
+@Serializable
+data class ConfigWeb(val googleClientId: String = "", val recaptchaSiteKey: String = "", val correoActivo: Boolean = false)
+
+/** `POST /usuarios/yo/correo/verificar` y `POST /registro/verificar-correo`. */
+@Serializable
+data class CodigoCorreo(val codigo: String)
+
+@Serializable
+data class VerificarCorreoRegistro(val usuario: String, val codigo: String)
+
+/** `POST /reportes/correo` (delegado). */
+@Serializable
+data class PedidoReporte(val desde: String? = null, val hasta: String? = null)

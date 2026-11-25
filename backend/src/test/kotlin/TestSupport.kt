@@ -53,7 +53,8 @@ fun ApplicationTestBuilder.setupAquaGo(
     codeSender: CodeSender = RecordingCodeSender(),
     recovery: RecoveryCodes = RecoveryCodes(),
     clock: Clock = MutableClock(),
-    syncLog: SyncLog = SyncLog()
+    syncLog: SyncLog = SyncLog(),
+    integraciones: Integraciones = Integraciones(correos = RecordingCorreos())
 ): PagoStore {
     val store = PagoStore(Files.createTempDirectory("pagos-test").toFile())
     application {
@@ -69,7 +70,8 @@ fun ApplicationTestBuilder.setupAquaGo(
             codeSender = codeSender,
             solicitudes = solicitudes,
             clock = clock,
-            syncLog = syncLog
+            syncLog = syncLog,
+            integraciones = integraciones
         )
     }
     return store
@@ -131,7 +133,8 @@ suspend fun ApplicationTestBuilder.registrar(
     usuario: String = "maria",
     contrasena: String = "secreto1",
     folio: String = "",
-    foto: ByteArray? = testJpeg
+    foto: ByteArray? = testJpeg,
+    correo: String? = null
 ) = client.submitFormWithBinaryData(
     url = "/registro",
     formData = formData {
@@ -142,6 +145,7 @@ suspend fun ApplicationTestBuilder.registrar(
         append("usuario", usuario)
         append("contrasena", contrasena)
         append("folio", folio)
+        correo?.let { append("correo", it) }
         if (foto != null) {
             append("foto", foto, Headers.build {
                 append(HttpHeaders.ContentType, "image/jpeg")
@@ -150,3 +154,15 @@ suspend fun ApplicationTestBuilder.registrar(
         }
     }
 )
+
+/** Guarda los correos que el servidor "enviaría" (servicio de correo). */
+class RecordingCorreos : Correos {
+    data class Enviado(val para: String, val asunto: String, val html: String)
+    override val activo = true
+    val enviados = mutableListOf<Enviado>()
+    override fun enviar(para: String, asunto: String, html: String) {
+        enviados.add(Enviado(para, asunto, html))
+    }
+    /** El código de 6 dígitos del último correo. */
+    val ultimoCodigo: String get() = Regex("\\b\\d{6}\\b").find(enviados.last().asunto)!!.value
+}

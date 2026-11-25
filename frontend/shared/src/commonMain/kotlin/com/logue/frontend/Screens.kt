@@ -160,74 +160,8 @@ private fun EntryCard(e: Entry, modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-fun CiudadanoScreen(
-    session: LoginResponse,
-    onLogout: () -> Unit,
-    onPagoPredial: () -> Unit,
-    onHistorialPagos: () -> Unit = {},
-    onPerfil: () -> Unit = {},
-    onSessionExpired: () -> Unit = onLogout
-) {
-    var recarga by remember { mutableStateOf(0) }
-    val carga = cargarDatos(session, recarga, onSessionExpired) { listarSolicitudes(it) }
-    val solicitudes = carga.datosOVacio()
-    RoleScreen(
-        title = "Mis solicitudes",
-        roleLabel = "Ciudadano",
-        name = session.username,
-        stats = contadoresCiudadano(solicitudes),
-        sectionTitle = "Solicitudes de agua",
-        entries = entradasCiudadano(solicitudes),
-        onLogout = onLogout,
-        actions = {
-            PrimaryButton("Registrar pago predial", onClick = onPagoPredial)
-            OutlinedButton(
-                onClick = onHistorialPagos,
-                shape = CircleShape,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.Accent),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
-            ) { Text("Mis pagos prediales", fontWeight = FontWeight.Bold) }
-            TextButton(onClick = onPerfil, modifier = Modifier.fillMaxWidth()) {
-                Text("Mi perfil", color = AppColors.Accent)
-            }
-        },
-        loading = carga is Carga.Cargando,
-        errorMessage = (carga as? Carga.Fallo)?.mensaje,
-        onRetry = { recarga++ },
-        emptyText = "Aún no tienes solicitudes de agua"
-    )
-}
-
-@Composable
-fun OperadorScreen(
-    session: LoginResponse,
-    onLogout: () -> Unit,
-    onPerfil: () -> Unit = {},
-    onSessionExpired: () -> Unit = onLogout
-) {
-    var recarga by remember { mutableStateOf(0) }
-    val carga = cargarDatos(session, recarga, onSessionExpired) { listarEntregas(it) }
-    val entregas = carga.datosOVacio()
-    RoleScreen(
-        title = "Mis entregas de hoy",
-        roleLabel = "Operador",
-        name = session.username,
-        stats = contadoresOperador(entregas),
-        sectionTitle = "Ruta del día",
-        entries = entradasOperador(entregas),
-        onLogout = onLogout,
-        actions = {
-            TextButton(onClick = onPerfil, modifier = Modifier.fillMaxWidth()) {
-                Text("Mi perfil", color = AppColors.Accent)
-            }
-        },
-        loading = carga is Carga.Cargando,
-        errorMessage = (carga as? Carga.Fallo)?.mensaje,
-        onRetry = { recarga++ },
-        emptyText = "No tienes entregas asignadas para hoy"
-    )
-}
+// CiudadanoScreen y OperadorScreen se rediseñaron para la integración con AquaGo:
+// están en CiudadanoScreens.kt y RepartidorScreens.kt. AdminScreen se queda aquí (panel en web).
 
 @Composable
 fun AdminScreen(
