@@ -31,6 +31,10 @@ import kotlinx.coroutines.launch
 fun RegisterScreen(onBack: () -> Unit) {
     var fullName by rememberSaveable { mutableStateOf("") }
     var phone by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
+    var emailCode by remember { mutableStateOf("") }
+    var emailVerified by rememberSaveable { mutableStateOf(false) }
+    var emailMessage by remember { mutableStateOf<String?>(null) }
     var street by rememberSaveable { mutableStateOf("") }
     var neighborhood by rememberSaveable { mutableStateOf("") }
     // La foto se queda en remember: varios MB no caben en el estado que Android guarda al girar la pantalla
@@ -70,6 +74,38 @@ fun RegisterScreen(onBack: () -> Unit) {
         ) {
             Spacer(Modifier.height(16.dp))
             Pill("En revisión", AppColors.Yellow)
+            // Servicio de correo: confirmar el correo con el código que acaba de llegar
+            if (email.isNotBlank()) {
+                Spacer(Modifier.height(20.dp))
+                if (emailVerified) {
+                    Pill("Correo verificado", AppColors.Green)
+                } else {
+                    Text(
+                        "Te enviamos un código de 6 dígitos a $email. Escríbelo para recibir avisos de tus pipas por correo.",
+                        color = AppColors.TextMuted,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    AquaGoTextField(
+                        value = emailCode,
+                        onValueChange = { emailCode = it.filter { c -> c.isDigit() }.take(6) },
+                        label = "Código del correo",
+                        keyboardType = KeyboardType.Number
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    PrimaryButton(if (loading) "Verificando..." else "Verificar correo", enabled = !loading && emailCode.length == 6) {
+                        scope.launch {
+                            loading = true
+                            when (val r = verificarCorreoDeRegistro(username, emailCode)) {
+                                is ApiResult.Ok -> { emailVerified = true; emailMessage = null }
+                                else -> emailMessage = r.mensajeDeError() ?: "No se pudo verificar"
+                            }
+                            loading = false
+                        }
+                    }
+                    emailMessage?.let { FormError(it) }
+                }
+            }
         }
         return
     }
@@ -97,6 +133,14 @@ fun RegisterScreen(onBack: () -> Unit) {
                 label = "Teléfono de contacto",
                 keyboardType = KeyboardType.Phone,
                 supportingText = "10 dígitos"
+            )
+            Spacer(Modifier.height(12.dp))
+            AquaGoTextField(
+                value = email,
+                onValueChange = { email = it.trim().take(100) },
+                label = "Correo electrónico (opcional)",
+                keyboardType = KeyboardType.Email,
+                supportingText = "Para recibir avisos de tus pipas y recuperar tu contraseña"
             )
         }
         Spacer(Modifier.height(14.dp))
@@ -187,7 +231,7 @@ fun RegisterScreen(onBack: () -> Unit) {
         PrimaryButton(if (loading) "Creando cuenta..." else "Crear cuenta", enabled = !loading) {
             val photo = receiptPhoto
             val validation = validateRegistration(
-                fullName, phone, street, neighborhood, photo != null, username, password, confirmation
+                fullName, phone, street, neighborhood, photo != null, username, password, confirmation, email
             )
             if (validation != null || photo == null) {
                 error = validation
@@ -196,7 +240,7 @@ fun RegisterScreen(onBack: () -> Unit) {
                     loading = true
                     error = null
                     val result = registrarCuenta(
-                        DatosRegistro(fullName, phone, street, neighborhood, username, password),
+                        DatosRegistro(fullName, phone, street, neighborhood, username, password, email),
                         photo
                     )
                     loading = false

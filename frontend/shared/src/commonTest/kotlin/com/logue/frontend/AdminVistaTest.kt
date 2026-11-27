@@ -63,3 +63,21 @@ class AdminVistaTest {
         assertFalse(esHoraValida("25:00"))
     }
 }
+
+/** Correo en el registro y la recuperación (servicio de correo). */
+class CorreoValidacionTest {
+    @Test
+    fun correoOpcionalEnRegistro() {
+        val ok = validateRegistration("Ana", "7711234567", "Calle 1", "Las Camelinas", true, "anita", "secreta1", "secreta1")
+        assertEquals(null, ok)
+        val malo = validateRegistration("Ana", "7711234567", "Calle 1", "Las Camelinas", true, "anita", "secreta1", "secreta1", "ana@")
+        assertEquals("Escribe un correo válido, por ejemplo nombre@gmail.com", malo)
+        assertTrue(esCorreoValido("ana.lopez@upt.edu.mx"))
+    }
+
+    @Test
+    fun recuperarConCorreo() {
+        assertEquals(null, validateRecoveryAccount("ana@gmail.com"))
+        assertEquals("tu correo ana@gmail.com", recoveryDestination("ana@gmail.com"))
+    }
+}

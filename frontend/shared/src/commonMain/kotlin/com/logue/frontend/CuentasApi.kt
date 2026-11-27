@@ -60,7 +60,9 @@ data class DatosRegistro(
     val calle: String,
     val colonia: String,
     val usuario: String,
-    val contrasena: String
+    val contrasena: String,
+    /** Opcional (servicio de correo): si viene, el servidor manda un código para verificarlo. */
+    val correo: String = ""
 )
 
 /** `POST /registro` con la foto del comprobante predial (USR-08, PRE-13). La cuenta queda en revisión (USR-11). */
@@ -75,6 +77,7 @@ suspend fun registrarCuenta(datos: DatosRegistro, comprobante: ByteArray): ApiRe
                 append("colonia", datos.colonia.trim())
                 append("usuario", datos.usuario.trim())
                 append("contrasena", datos.contrasena)
+                if (datos.correo.isNotBlank()) append("correo", datos.correo.trim())
                 append("foto", comprobante, Headers.build {
                     append(HttpHeaders.ContentType, "image/jpeg")
                     append(HttpHeaders.ContentDisposition, "filename=\"comprobante.jpg\"")
@@ -177,4 +180,16 @@ suspend fun descargarFotoDePago(token: String, id: String): ApiResult<ByteArray>
         }
     },
     leer = { it.body<ByteArray>() }
+)
+
+/** `POST /registro/verificar-correo`: confirma el correo justo después de crear la cuenta (todavía en revisión). */
+suspend fun verificarCorreoDeRegistro(usuario: String, codigo: String): ApiResult<Unit> = peticion(
+    hacer = {
+        client.post("$BASE_URL/registro/verificar-correo") {
+            contentType(ContentType.Application.Json)
+            setBody(VerificarCorreoRegistro(usuario.trim(), codigo.trim()))
+            timeout { requestTimeoutMillis = ESPERA_SERVIDOR_DORMIDO_MS }
+        }
+    },
+    leer = { }
 )

@@ -20,10 +20,12 @@ fun validateRegistration(
     hasPropertyTaxReceipt: Boolean,
     username: String,
     password: String,
-    confirmation: String
+    confirmation: String,
+    email: String = ""
 ): String? = when {
     fullName.isBlank() -> "Escribe tu nombre completo"
     phone.length != 10 || !phone.all { it.isDigit() } -> "El teléfono debe tener 10 dígitos"
+    email.isNotBlank() && !esCorreoValido(email) -> "Escribe un correo válido, por ejemplo nombre@gmail.com"
     street.isBlank() -> "Escribe la calle y el número de tu domicilio"
     neighborhood.isBlank() -> "Escribe tu colonia o localidad"
     !hasPropertyTaxReceipt -> "Adjunta tu comprobante de pago predial"
@@ -39,12 +41,18 @@ fun validateNewPassword(password: String, confirmation: String): String? = when 
     else -> null
 }
 
-/** Paso 1 de la recuperación: usuario o teléfono. */
+private val FORMATO_CORREO = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
+
+/** Mismo formato de correo que valida el servidor (backend/Correo.kt). Máximo 100 caracteres. */
+fun esCorreoValido(correo: String): Boolean = correo.trim().length <= 100 && FORMATO_CORREO.matches(correo.trim())
+
+/** Paso 1 de la recuperación: usuario, teléfono o correo verificado. */
 fun validateRecoveryAccount(account: String): String? {
     val value = account.trim()
     return when {
         value.isEmpty() -> "Escribe tu usuario o teléfono"
         value.all { it.isDigit() } && value.length != 10 -> "El teléfono debe tener 10 dígitos"
+        '@' in value && !esCorreoValido(value) -> "Escribe un correo válido, por ejemplo nombre@gmail.com"
         else -> null
     }
 }
@@ -60,6 +68,8 @@ fun recoveryDestination(account: String): String {
     val value = account.trim()
     return if (value.isNotEmpty() && value.all { it.isDigit() }) {
         "el teléfono que termina en ${value.takeLast(4)}"
+    } else if ('@' in value) {
+        "tu correo $value"
     } else {
         "el teléfono registrado en la cuenta $value"
     }

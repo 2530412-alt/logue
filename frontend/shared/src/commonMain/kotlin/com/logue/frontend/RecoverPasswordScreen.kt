@@ -79,7 +79,7 @@ fun RecoverPasswordScreen(onBack: () -> Unit) {
             when (step) {
                 RecoverStep.ACCOUNT -> {
                     Text(
-                        "Escribe tu usuario o el teléfono con el que te registraste. Te enviaremos un código por SMS.",
+                        "Escribe tu usuario, el teléfono con el que te registraste o tu correo verificado. Te enviaremos un código de 6 dígitos.",
                         color = AppColors.TextMuted,
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -87,7 +87,7 @@ fun RecoverPasswordScreen(onBack: () -> Unit) {
                     AquaGoTextField(
                         value = account,
                         onValueChange = { account = it },
-                        label = "Usuario o teléfono"
+                        label = "Usuario, teléfono o correo"
                     )
                     Spacer(Modifier.height(16.dp))
                     PrimaryButton(if (loading) "Enviando..." else "Enviar código", enabled = !loading) {
