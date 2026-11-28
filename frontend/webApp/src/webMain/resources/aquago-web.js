@@ -111,6 +111,27 @@
       document.body.appendChild(a);
       a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    },
+
+    // Reporte imprimible: se escribe en un marco oculto y se abre el diálogo de impresión (o «Guardar como PDF»)
+    imprimir: function (html) {
+      var marco = document.createElement("iframe");
+      marco.style.position = "fixed"; marco.style.width = "0"; marco.style.height = "0"; marco.style.border = "0";
+      document.body.appendChild(marco);
+      var doc = marco.contentWindow.document;
+      doc.open(); doc.write(html); doc.close();
+      setTimeout(function () {
+        marco.contentWindow.focus();
+        marco.contentWindow.print();
+        setTimeout(function () { marco.remove(); }, 60000);
+      }, 300);
+    },
+
+    // «27/11/2026 21:40» con la hora de la computadora
+    fechaHora: function () {
+      var d = new Date();
+      function dos(n) { return (n < 10 ? "0" : "") + n; }
+      return dos(d.getDate()) + "/" + dos(d.getMonth() + 1) + "/" + d.getFullYear() + " " + dos(d.getHours()) + ":" + dos(d.getMinutes());
     }
   };
 })();

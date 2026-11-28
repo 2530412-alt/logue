@@ -190,7 +190,11 @@ class Avisos(private val correos: Correos, private val users: UserRepository) {
         correos.enviar(user.correo, asunto, plantilla(asunto, "<p>Hola ${escaparHtml(user.nombre.ifBlank { user.username })}:</p><p>$texto</p>"))
     }
 
-    fun reporte(destino: String, r: ReporteEntregas) {
+    fun reporte(destino: String, r: ReporteEntregas, generado: String = java.time.LocalDateTime.now(appZone())
+        .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))) {
+        val total = "padding:6px;background:#0B5CAD;color:#ffffff;font-weight:bold"
+        val totalDia = "<tr><td style=\"$total\">Total</td><td style=\"$total;text-align:right\">${r.porDia.sumOf { it.entregadas }} / ${r.porDia.sumOf { it.solicitudes }}</td><td style=\"$total;text-align:right\">${miles(r.porDia.sumOf { it.litros })} L</td></tr>"
+        val totalRep = "<tr><td style=\"$total\">Total</td><td style=\"$total;text-align:right\">${r.porRepartidor.sumOf { it.entregadas }}</td><td style=\"$total;text-align:right\">${r.porRepartidor.sumOf { it.noEntregadas }}</td><td style=\"$total;text-align:right\">${miles(r.porRepartidor.sumOf { it.litros })} L</td></tr>"
         val filasDia = r.porDia.joinToString("") {
             "<tr><td style=\"padding:6px;border-bottom:1px solid #EEF3F8\">${formatoDia(it.dia)}</td><td style=\"padding:6px;border-bottom:1px solid #EEF3F8;text-align:right\">${it.entregadas} / ${it.solicitudes}</td><td style=\"padding:6px;border-bottom:1px solid #EEF3F8;text-align:right\">${miles(it.litros)} L</td></tr>"
         }
@@ -198,7 +202,7 @@ class Avisos(private val correos: Correos, private val users: UserRepository) {
             "<tr><td style=\"padding:6px;border-bottom:1px solid #EEF3F8\">${escaparHtml(it.repartidor)}</td><td style=\"padding:6px;border-bottom:1px solid #EEF3F8;text-align:right\">${it.entregadas}</td><td style=\"padding:6px;border-bottom:1px solid #EEF3F8;text-align:right\">${it.noEntregadas}</td><td style=\"padding:6px;border-bottom:1px solid #EEF3F8;text-align:right\">${miles(it.litros)} L</td></tr>"
         }
         val cuerpo = """
-            <p>Periodo: <b>${formatoDia(r.desde)}</b> al <b>${formatoDia(r.hasta)}</b></p>
+            <p>Fecha de generación: <b>$generado</b><br>Periodo: del <b>${formatoDia(r.desde)}</b> al <b>${formatoDia(r.hasta)}</b></p>
             <table style="width:100%;border-collapse:collapse;margin:12px 0">
               <tr><td>Solicitudes</td><td style="text-align:right"><b>${r.total}</b></td></tr>
               <tr><td>Entregadas</td><td style="text-align:right;color:#1F9D63"><b>${r.entregadas}</b></td></tr>
@@ -208,9 +212,9 @@ class Avisos(private val correos: Correos, private val users: UserRepository) {
               <tr><td>Litros entregados</td><td style="text-align:right"><b>${miles(r.litrosEntregados)} L</b></td></tr>
             </table>
             <h3 style="font-size:15px">Por día</h3>
-            <table style="width:100%;border-collapse:collapse"><tr style="color:#64748B"><td>Día</td><td style="text-align:right">Entregadas / total</td><td style="text-align:right">Litros</td></tr>$filasDia</table>
+            <table style="width:100%;border-collapse:collapse"><tr style="color:#64748B"><td>Día</td><td style="text-align:right">Entregadas / total</td><td style="text-align:right">Litros entregados</td></tr>$filasDia$totalDia</table>
             <h3 style="font-size:15px">Por repartidor</h3>
-            <table style="width:100%;border-collapse:collapse"><tr style="color:#64748B"><td>Repartidor</td><td style="text-align:right">Entregadas</td><td style="text-align:right">No entregadas</td><td style="text-align:right">Litros</td></tr>$filasRep</table>
+            <table style="width:100%;border-collapse:collapse"><tr style="color:#64748B"><td>Repartidor</td><td style="text-align:right">Entregadas</td><td style="text-align:right">No entregadas</td><td style="text-align:right">Litros entregados</td></tr>$filasRep$totalRep</table>
         """.trimIndent()
         correos.enviar(destino, "Reporte de entregas AquaGo ${formatoDia(r.desde)} - ${formatoDia(r.hasta)}", plantilla("Reporte de entregas", cuerpo))
     }

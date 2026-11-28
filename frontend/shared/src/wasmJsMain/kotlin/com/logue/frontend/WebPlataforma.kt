@@ -15,6 +15,8 @@ private fun jsReiniciarCaptcha(): Unit = js("window.aquago.reiniciarCaptcha()")
 private fun jsUbicar(id: String, x: Double, y: Double, ancho: Double, alto: Double, visible: Boolean): Unit =
     js("window.aquago.ubicar(id, x, y, ancho, alto, visible)")
 private fun jsDescargar(nombre: String, contenido: String): Unit = js("window.aquago.descargar(nombre, contenido)")
+private fun jsImprimir(html: String): Unit = js("window.aquago.imprimir(html)")
+private fun jsFechaHora(): String = js("window.aquago.fechaHora()")
 
 actual fun iniciarWeb() {
     // ?servidor=local, o la página abierta desde localhost -> backend de la computadora (localhost:8081)
@@ -34,4 +36,6 @@ actual fun iniciarWeb() {
         jsUbicar(id, x.toDouble(), y.toDouble(), ancho.toDouble(), alto.toDouble(), visible)
     }
     Plataforma.descargarTexto = { nombre, contenido -> jsDescargar(nombre, contenido) }
+    Plataforma.imprimirHtml = { html -> jsImprimir(html) }
+    Plataforma.fechaHoraLocal = { jsFechaHora() }
 }
