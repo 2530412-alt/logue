@@ -26,7 +26,6 @@ fun Application.aquaGoModule(
     corsOrigins: List<String> = corsOriginsFromEnvironment(),
     loginsPerMinute: Int = 20,
     recovery: RecoveryCodes = RecoveryCodes(),
-    codeSender: CodeSender = LogCodeSender(),
     solicitudes: SolicitudStore = defaultSolicitudStore(),
     clock: java.time.Clock = java.time.Clock.systemUTC(),
     syncLog: SyncLog = defaultSyncLog(),
@@ -38,7 +37,7 @@ fun Application.aquaGoModule(
     configureErrors()
     configureSecurity(tokens)
     configureRateLimit(loginsPerMinute)
-    configureRouting(users, pagos, remote, tokens, attempts, recovery, codeSender, solicitudes, clock, syncLog, integraciones)
+    configureRouting(users, pagos, remote, tokens, attempts, recovery, solicitudes, clock, syncLog, integraciones)
 }
 
 /**

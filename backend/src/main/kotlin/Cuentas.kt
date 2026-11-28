@@ -61,22 +61,6 @@ fun validarUsuarioNuevo(usuario: String): String? = when {
 //  Recuperación de contraseña (USR-12)
 // ------------------------------------------------------------------------------------------
 
-/** Cómo llega el código de 6 dígitos al ciudadano. La implementación real (SMS) es NOT-05. */
-interface CodeSender {
-    fun send(phone: String, code: String)
-}
-
-/**
- * Sustituto mientras no exista el envío de SMS (NOT-05): deja el código en el registro del servidor
- * (`railway logs` o la pestaña Logs de Render). Para enviar SMS reales basta con otra implementación
- * de [CodeSender]; el resto de la recuperación no cambia.
- */
-class LogCodeSender : CodeSender {
-    override fun send(phone: String, code: String) {
-        log.warn("SMS no configurado (NOT-05). Código de recuperación para el teléfono que termina en ${phone.takeLast(4)}: $code")
-    }
-}
-
 /**
  * Códigos de recuperación: 6 dígitos al azar, válidos [validity] y con [maxAttempts] intentos.
  * Se guardan en memoria: si el servidor se reinicia, el ciudadano pide un código nuevo.
@@ -159,7 +143,6 @@ fun Route.cuentasPublicas(
     pagos: PagoStore,
     remote: RemoteCopier?,
     recovery: RecoveryCodes,
-    codeSender: CodeSender,
     avisos: Avisos? = null,
     verificaciones: RecoveryCodes = RecoveryCodes()
 ) {
@@ -264,7 +247,7 @@ fun Route.cuentasPublicas(
             val cuenta = req.cuenta.trim()
             when {
                 cuenta.isEmpty() -> {
-                    call.respond(HttpStatusCode.BadRequest, "Escribe tu usuario o teléfono")
+                    call.respond(HttpStatusCode.BadRequest, "Escribe tu usuario, teléfono o correo")
                     return@post
                 }
                 cuenta.all { it.isDigit() } && cuenta.length != 10 -> {
@@ -272,14 +255,13 @@ fun Route.cuentasPublicas(
                     return@post
                 }
             }
+            // La recuperación es solo por correo: el código llega al correo verificado de la cuenta
             val user = users.findByAccount(cuenta)
-            if (user != null && user.telefono.isNotEmpty() && user.estado != EstadoCuenta.INACTIVA) {
+            if (user != null && user.correoVerificado && user.correo.isNotBlank() && user.estado != EstadoCuenta.INACTIVA) {
                 val codigo = recovery.issue(user.username)
-                codeSender.send(user.telefono, codigo)
-                // Servicio de correo: el mismo código también llega al correo, si está verificado
                 avisos?.codigoRecuperacion(user, codigo)
             }
-            call.respond(HttpStatusCode.Accepted, "Si la cuenta existe, enviamos un código al teléfono y al correo registrados")
+            call.respond(HttpStatusCode.Accepted, "Si la cuenta existe y tiene correo verificado, enviamos un código a ese correo")
         }
 
         // POST /recuperacion/confirmar {cuenta, codigo, contrasena} -> 204 contraseña cambiada | 400 código o datos inválidos

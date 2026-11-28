@@ -72,7 +72,7 @@ data class PerfilCambio(
 @Serializable
 data class CambioEstado(val estado: String)
 
-/** Cuerpo de `POST /recuperacion/solicitar` (USR-12): usuario o teléfono de 10 dígitos. */
+/** Cuerpo de `POST /recuperacion/solicitar` (USR-12): usuario, teléfono de 10 dígitos o correo. El código llega solo al correo verificado. */
 @Serializable
 data class RecuperacionSolicitud(val cuenta: String)
 

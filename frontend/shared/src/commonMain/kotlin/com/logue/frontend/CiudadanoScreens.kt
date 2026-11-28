@@ -22,7 +22,8 @@ import kotlinx.coroutines.launch
  * Pantallas del CIUDADANO (integración AquaGo + rediseño):
  * - «Mis solicitudes»: encabezado con saludo y menú de cuenta, botón grande «Pedir pipa», contadores
  *   y tarjetas de cada solicitud (litros, estatus con color, domicilio, referencia, fecha) con «Cancelar».
- * - «Pedir pipa»: formulario guiado (cantidad, día, domicilio) que funciona también sin conexión.
+ * - «Pedir pipa»: formulario guiado (cantidad, día y hora, domicilio) que funciona también sin conexión.
+ *   El día se elige entre 3 y 7 días después de hoy y la hora entre las que siguen libres (GET /horarios).
  */
 
 /** Aviso que una pantalla deja para la siguiente (por ejemplo, «Tu solicitud fue enviada»). */
@@ -218,7 +219,10 @@ fun PedirPipaScreen(
 ) {
     val perfil = remember { Offline.perfilGuardado(session.username) }
     var litros by remember { mutableStateOf<Int?>(null) }
-    var dias by remember { mutableStateOf(0) }
+    var agenda by remember { mutableStateOf<Agenda?>(null) }
+    var agendaSinRed by remember { mutableStateOf(false) }
+    var dia by remember { mutableStateOf<String?>(null) }
+    var hora by remember { mutableStateOf<String?>(null) }
     var domicilio by remember { mutableStateOf(perfil?.calle.orEmpty()) }
     var colonia by remember { mutableStateOf(perfil?.colonia?.ifBlank { null } ?: "Las Camelinas") }
     var referencia by remember { mutableStateOf("") }
@@ -228,10 +232,19 @@ fun PedirPipaScreen(
     var enviando by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    val opcionesDia = listOf("Hoy" to 0, "Mañana" to 1, "Pasado mañana" to 2)
+    LaunchedEffect(Unit) {
+        when (val r = obtenerAgenda(session.token)) {
+            is ApiResult.Ok -> agenda = r.valor
+            ApiResult.SesionVencida -> onSessionExpired()
+            else -> { agenda = agendaSinConexion(); agendaSinRed = true }
+        }
+    }
+    val diaElegido = agenda?.dias?.firstOrNull { it.dia == dia }
 
     fun validar(): String? = when {
         litros == null -> "Elige cuántos litros necesitas"
+        dia == null -> "Elige el día de entrega"
+        hora == null -> "Elige la hora de entrega"
         domicilio.isBlank() -> "Escribe la calle y el número de tu casa"
         domicilio.length > 120 -> "La calle es demasiado larga"
         colonia.length > 120 -> "La colonia es demasiado larga"
@@ -256,14 +269,50 @@ fun PedirPipaScreen(
                     Spacer(Modifier.height(10.dp))
                 }
             }
-            Paso(2, "¿Qué día la quieres?") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    opcionesDia.forEach { (texto, d) ->
-                        OpcionDia(texto, formatDia(Plataforma.fechaLocal(d)), dias == d, Modifier.weight(1f)) { dias = d }
+            Paso(2, "¿Qué día y a qué hora?") {
+                val a = agenda
+                if (a == null) {
+                    Text("Cargando los horarios disponibles...", color = AppColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text(
+                        "Elige un día de los próximos ${a.minimoDias} a ${a.maximoDias} días (mínimo ${a.minimoDias} días de anticipación).",
+                        color = AppColors.TextMuted, style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    a.dias.chunked(3).forEach { fila ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            fila.forEach { d ->
+                                OpcionDia(nombreDiaSemana(d.dia), formatDia(d.dia), dia == d.dia, Modifier.weight(1f), libres = d.libres.size) {
+                                    dia = d.dia
+                                    if (hora != null && hora !in d.libres) hora = null
+                                    error = null
+                                }
+                            }
+                            repeat(3 - fila.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    if (diaElegido != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("Hora de entrega", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(8.dp))
+                        a.horarios.ifEmpty { HORARIOS_ENTREGA }.chunked(4).forEach { fila ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                fila.forEach { h ->
+                                    val libre = h in diaElegido.libres
+                                    OpcionHora(h, seleccionada = hora == h, libre = libre, Modifier.weight(1f)) { hora = h; error = null }
+                                }
+                                repeat(4 - fila.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        Text(
+                            if (agendaSinRed) "Sin conexión: no sabemos qué horas ya apartaron otros vecinos. Si la que elijas ya está ocupada, te avisaremos al enviarla."
+                            else "Las horas en gris ya las apartó otro ciudadano.",
+                            color = AppColors.TextMuted, style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                Text("El delegado te confirmará la hora de entrega.", color = AppColors.TextMuted, style = MaterialTheme.typography.bodySmall)
             }
             Paso(3, "¿Dónde la dejamos?") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -278,7 +327,11 @@ fun PedirPipaScreen(
         Column(Modifier.fillMaxWidth().background(AppColors.Surface).padding(16.dp)) {
             if (litros != null) {
                 Text(
-                    "${formatLitros(litros!!)} L · ${opcionesDia.first { it.second == dias }.first} ${formatDia(Plataforma.fechaLocal(dias))}",
+                    listOfNotNull(
+                        "${formatLitros(litros!!)} L",
+                        dia?.let { "${nombreDiaSemana(it)} ${formatDia(it)}" },
+                        hora?.let { "$it h" }
+                    ).joinToString(" · "),
                     color = AppColors.TextMuted, style = MaterialTheme.typography.bodySmall
                 )
                 Spacer(Modifier.height(8.dp))
@@ -304,7 +357,8 @@ fun PedirPipaScreen(
                     val r = Offline.pedirPipa(
                         session,
                         NuevaSolicitud(
-                            dia = Plataforma.fechaLocal(dias),
+                            dia = dia!!,
+                            hora = hora,
                             capacidadLitros = litros!!,
                             domicilio = domicilio.trim(),
                             colonia = colonia.trim().ifBlank { null },
@@ -326,7 +380,7 @@ fun PedirPipaScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 InfoRow(Icono.GOTA, "${formatLitros(litros ?: 0)} litros", fuerte = true)
-                InfoRow(Icono.CALENDARIO, formatDia(Plataforma.fechaLocal(dias)))
+                InfoRow(Icono.CALENDARIO, "${nombreDiaSemana(dia.orEmpty())} ${formatDia(dia.orEmpty())} · ${hora.orEmpty()} h")
                 InfoRow(Icono.UBICACION, listOf(domicilio.trim(), colonia.trim()).filter { it.isNotBlank() }.joinToString(", "))
                 if (referencia.isNotBlank()) InfoRow(Icono.NOTA, referencia.trim())
             }
@@ -369,17 +423,57 @@ private fun OpcionLitros(litros: Int, seleccionada: Boolean, modifier: Modifier,
 }
 
 @Composable
-private fun OpcionDia(texto: String, fecha: String, seleccionada: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun OpcionDia(texto: String, fecha: String, seleccionada: Boolean, modifier: Modifier, libres: Int? = null, onClick: () -> Unit) {
+    val lleno = libres == 0
     Column(
         modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(if (seleccionada) AppColors.Accent else AppColors.Surface)
+            .background(if (seleccionada) AppColors.Accent else if (lleno) AppColors.SurfaceAlt else AppColors.Surface)
             .border(1.dp, if (seleccionada) AppColors.Accent else AppColors.Border, RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
+            .clickable(enabled = !lleno, onClick = onClick)
             .padding(vertical = 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(texto, color = if (seleccionada) Color.White else AppColors.TextPrimary, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         Text(fecha.take(5), color = if (seleccionada) Color.White.copy(alpha = 0.85f) else AppColors.TextMuted, style = MaterialTheme.typography.labelSmall)
+        if (libres != null) {
+            Text(
+                if (lleno) "Sin horas" else "$libres libres",
+                color = if (seleccionada) Color.White.copy(alpha = 0.85f) else if (lleno) AppColors.Red else AppColors.Green,
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+    }
+}
+
+/** Botón de una hora de entrega: azul si está elegida, gris y sin acción si ya la apartó otro ciudadano. */
+@Composable
+private fun OpcionHora(hora: String, seleccionada: Boolean, libre: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                when {
+                    seleccionada -> AppColors.Accent
+                    !libre -> AppColors.SurfaceAlt
+                    else -> AppColors.Surface
+                }
+            )
+            .border(1.dp, if (seleccionada) AppColors.Accent else AppColors.Border, RoundedCornerShape(12.dp))
+            .clickable(enabled = libre, onClick = onClick)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            if (libre) hora else "$hora\nOcupada",
+            color = when {
+                seleccionada -> Color.White
+                !libre -> AppColors.TextMuted
+                else -> AppColors.TextPrimary
+            },
+            fontWeight = if (seleccionada) FontWeight.Bold else FontWeight.Medium,
+            style = MaterialTheme.typography.labelLarge,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
     }
 }

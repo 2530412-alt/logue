@@ -14,7 +14,7 @@ import kotlin.test.assertTrue
 class CuentasTest {
 
     private fun usuariosConMaria() = JsonUserRepository(
-        testUsers + User("maria", testPasswordHash(), Roles.CIUDADANO, nombre = "María López", telefono = "7711234567")
+        testUsers + User("maria", testPasswordHash(), Roles.CIUDADANO, nombre = "María López", telefono = "7711234567", correo = "maria@gmail.com", correoVerificado = true)
     )
 
     private suspend fun ApplicationTestBuilder.json(path: String, body: String, token: String? = null, method: HttpMethod = HttpMethod.Post) =
@@ -124,16 +124,16 @@ class CuentasTest {
     // ---- Recuperación de contraseña (USR-12) ----
 
     @Test
-    fun `recuperar la contrasena con el codigo enviado al telefono`() = testApplication {
-        val sender = RecordingCodeSender()
-        setupAquaGo(users = usuariosConMaria(), codeSender = sender)
+    fun `recuperar la contrasena con el codigo enviado al correo verificado`() = testApplication {
+        val sender = RecordingCorreos()
+        setupAquaGo(users = usuariosConMaria(), integraciones = Integraciones(correos = sender))
 
         val pedido = json("/recuperacion/solicitar", """{"cuenta":"maria"}""")
         assertEquals(HttpStatusCode.Accepted, pedido.status)
-        assertEquals("7711234567", sender.sent.single().first)
-        assertEquals(6, sender.lastCode.length)
+        assertEquals("maria@gmail.com", sender.enviados.single().para)
+        assertEquals(6, sender.ultimoCodigo.length)
 
-        val cambio = json("/recuperacion/confirmar", """{"cuenta":"maria","codigo":"${sender.lastCode}","contrasena":"nueva-clave"}""")
+        val cambio = json("/recuperacion/confirmar", """{"cuenta":"maria","codigo":"${sender.ultimoCodigo}","contrasena":"nueva-clave"}""")
         assertEquals(HttpStatusCode.NoContent, cambio.status)
         assertEquals(HttpStatusCode.OK, login("maria", "nueva-clave").status)
         assertEquals(HttpStatusCode.Unauthorized, login("maria", TEST_PASSWORD).status)
@@ -141,21 +141,30 @@ class CuentasTest {
 
     @Test
     fun `tambien se puede pedir el codigo con el telefono`() = testApplication {
-        val sender = RecordingCodeSender()
-        setupAquaGo(users = usuariosConMaria(), codeSender = sender)
+        val sender = RecordingCorreos()
+        setupAquaGo(users = usuariosConMaria(), integraciones = Integraciones(correos = sender))
         assertEquals(HttpStatusCode.Accepted, json("/recuperacion/solicitar", """{"cuenta":"7711234567"}""").status)
-        val cambio = json("/recuperacion/confirmar", """{"cuenta":"7711234567","codigo":"${sender.lastCode}","contrasena":"otra-clave"}""")
+        val cambio = json("/recuperacion/confirmar", """{"cuenta":"7711234567","codigo":"${sender.ultimoCodigo}","contrasena":"otra-clave"}""")
         assertEquals(HttpStatusCode.NoContent, cambio.status)
         assertEquals(HttpStatusCode.OK, login("maria", "otra-clave").status)
     }
 
     @Test
     fun `una cuenta inexistente responde igual y no envia nada`() = testApplication {
-        val sender = RecordingCodeSender()
-        setupAquaGo(users = usuariosConMaria(), codeSender = sender)
+        val sender = RecordingCorreos()
+        setupAquaGo(users = usuariosConMaria(), integraciones = Integraciones(correos = sender))
         assertEquals(HttpStatusCode.Accepted, json("/recuperacion/solicitar", """{"cuenta":"nadie"}""").status)
         assertEquals(HttpStatusCode.Accepted, json("/recuperacion/solicitar", """{"cuenta":"7799999999"}""").status)
-        assertTrue(sender.sent.isEmpty())
+        assertTrue(sender.enviados.isEmpty())
+    }
+
+    @Test
+    fun `sin correo verificado no se manda codigo por ningun medio`() = testApplication {
+        val correos = RecordingCorreos()
+        val sinCorreo = JsonUserRepository(testUsers + User("pepe", testPasswordHash(), Roles.CIUDADANO, telefono = "7719998888"))
+        setupAquaGo(users = sinCorreo, integraciones = Integraciones(correos = correos))
+        assertEquals(HttpStatusCode.Accepted, json("/recuperacion/solicitar", """{"cuenta":"pepe"}""").status)
+        assertTrue(correos.enviados.isEmpty())
     }
 
     @Test
@@ -167,10 +176,10 @@ class CuentasTest {
 
     @Test
     fun `un codigo incorrecto no cambia la contrasena y despues de cinco intentos deja de servir`() = testApplication {
-        val sender = RecordingCodeSender()
-        setupAquaGo(users = usuariosConMaria(), codeSender = sender)
+        val sender = RecordingCorreos()
+        setupAquaGo(users = usuariosConMaria(), integraciones = Integraciones(correos = sender))
         json("/recuperacion/solicitar", """{"cuenta":"maria"}""")
-        val correcto = sender.lastCode
+        val correcto = sender.ultimoCodigo
         val malo = if (correcto == "000000") "111111" else "000000"
 
         repeat(5) {
@@ -184,27 +193,27 @@ class CuentasTest {
 
     @Test
     fun `el codigo vence a los diez minutos y solo sirve una vez`() = testApplication {
-        val sender = RecordingCodeSender()
+        val sender = RecordingCorreos()
         val clock = MutableClock()
-        setupAquaGo(users = usuariosConMaria(), codeSender = sender, recovery = RecoveryCodes(clock), clock = clock)
+        setupAquaGo(users = usuariosConMaria(), integraciones = Integraciones(correos = sender), recovery = RecoveryCodes(clock), clock = clock)
 
         json("/recuperacion/solicitar", """{"cuenta":"maria"}""")
         clock.advance(Duration.ofMinutes(11))
-        val vencido = json("/recuperacion/confirmar", """{"cuenta":"maria","codigo":"${sender.lastCode}","contrasena":"nueva-clave"}""")
+        val vencido = json("/recuperacion/confirmar", """{"cuenta":"maria","codigo":"${sender.ultimoCodigo}","contrasena":"nueva-clave"}""")
         assertEquals(HttpStatusCode.BadRequest, vencido.status)
 
         json("/recuperacion/solicitar", """{"cuenta":"maria"}""")
-        val body = """{"cuenta":"maria","codigo":"${sender.lastCode}","contrasena":"nueva-clave"}"""
+        val body = """{"cuenta":"maria","codigo":"${sender.ultimoCodigo}","contrasena":"nueva-clave"}"""
         assertEquals(HttpStatusCode.NoContent, json("/recuperacion/confirmar", body).status)
         assertEquals(HttpStatusCode.BadRequest, json("/recuperacion/confirmar", body).status, "el código ya se usó")
     }
 
     @Test
     fun `la contrasena nueva debe cumplir la misma regla del registro`() = testApplication {
-        val sender = RecordingCodeSender()
-        setupAquaGo(users = usuariosConMaria(), codeSender = sender)
+        val sender = RecordingCorreos()
+        setupAquaGo(users = usuariosConMaria(), integraciones = Integraciones(correos = sender))
         json("/recuperacion/solicitar", """{"cuenta":"maria"}""")
-        val res = json("/recuperacion/confirmar", """{"cuenta":"maria","codigo":"${sender.lastCode}","contrasena":"123"}""")
+        val res = json("/recuperacion/confirmar", """{"cuenta":"maria","codigo":"${sender.ultimoCodigo}","contrasena":"123"}""")
         assertEquals(HttpStatusCode.BadRequest, res.status)
     }
 

@@ -39,7 +39,6 @@ fun Application.configureRouting(
     tokens: TokenService,
     attempts: LoginAttempts,
     recovery: RecoveryCodes = RecoveryCodes(),
-    codeSender: CodeSender = LogCodeSender(),
     solicitudes: SolicitudStore = defaultSolicitudStore(),
     clock: java.time.Clock = java.time.Clock.systemUTC(),
     syncLog: SyncLog = defaultSyncLog(),
@@ -128,7 +127,7 @@ fun Application.configureRouting(
         }
 
         // Registro y recuperación de contraseña: públicos, con el mismo límite de peticiones que el login
-        cuentasPublicas(users, pagos, remote, recovery, codeSender, avisos, integraciones.verificaciones)
+        cuentasPublicas(users, pagos, remote, recovery, avisos, integraciones.verificaciones)
         // Iniciar sesión con Google, verificar correo y configuración pública de la página web (CorreoGoogleRoutes.kt)
         correoGooglePublicas(users, tokens, attempts, integraciones, avisos)
 

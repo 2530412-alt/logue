@@ -46,6 +46,18 @@ fun formatDia(dia: String): String {
     return if (partes.size == 3 && partes[0].length == 4) "${partes[2]}/${partes[1]}/${partes[0]}" else dia
 }
 
+/** Nombre del día de la semana de una fecha AAAA-MM-DD (por ejemplo «Lunes»). */
+fun nombreDiaSemana(dia: String): String {
+    val p = dia.split('-').mapNotNull { it.toIntOrNull() }
+    if (p.size != 3) return ""
+    var (a, m, d) = p
+    // Algoritmo de Sakamoto: 0 = domingo
+    val t = intArrayOf(0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4)
+    if (m < 3) a -= 1
+    val n = (a + a / 4 - a / 100 + a / 400 + t[m - 1] + d) % 7
+    return listOf("Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado")[n]
+}
+
 /** Tarjetas del ciudadano (SOL-02): en camino, pendientes y entregadas. */
 fun contadoresCiudadano(solicitudes: List<Solicitud>) = listOf(
     Stat(solicitudes.count { it.estado == EstadoSolicitud.EN_CAMINO }.toString(), "En camino", AppColors.Blue),

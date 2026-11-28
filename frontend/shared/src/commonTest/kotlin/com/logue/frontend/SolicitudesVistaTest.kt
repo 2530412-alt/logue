@@ -117,4 +117,20 @@ class SolicitudesVistaTest {
     fun fechaLegibleDeUnPago() {
         assertEquals("04/11/2026 18:30", fechaLegible("2026-11-04T18:30:12.345Z"))
     }
+
+    @Test
+    fun `nombre del dia de la semana para la agenda`() {
+        assertEquals("Viernes", nombreDiaSemana("2026-11-27"))
+        assertEquals("Lunes", nombreDiaSemana("2026-11-30"))
+        assertEquals("Jueves", nombreDiaSemana("2026-01-01"))
+        assertEquals("Domingo", nombreDiaSemana("2026-03-01"))
+        assertEquals("", nombreDiaSemana("mañana"))
+    }
+
+    @Test
+    fun `los horarios de entrega van de las 8 a las 17 horas`() {
+        assertEquals(10, HORARIOS_ENTREGA.size)
+        assertEquals("08:00", HORARIOS_ENTREGA.first())
+        assertEquals("17:00", HORARIOS_ENTREGA.last())
+    }
 }

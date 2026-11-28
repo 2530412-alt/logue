@@ -115,3 +115,29 @@ suspend fun sincronizar(token: String, operaciones: List<OperacionSync>): ApiRes
     },
     leer = { it.body<SyncRespuesta>() }
 )
+
+/** `GET /horarios`: días que el ciudadano puede elegir (de 3 a 7 días después de hoy) y sus horas libres. */
+@Serializable
+data class HorarioDia(val dia: String, val libres: List<String> = emptyList(), val ocupadas: List<String> = emptyList())
+
+@Serializable
+data class Agenda(val minimoDias: Int = 3, val maximoDias: Int = 7, val horarios: List<String> = emptyList(), val dias: List<HorarioDia> = emptyList())
+
+/** Horarios de entrega (los mismos que HORARIOS_ENTREGA en el backend). */
+val HORARIOS_ENTREGA: List<String> = (8..17).map { if (it < 10) "0$it:00" else "$it:00" }
+
+/** Agenda que se muestra sin conexión: los mismos días calculados en el teléfono, sin saber qué horas están ocupadas. */
+fun agendaSinConexion(): Agenda = Agenda(
+    horarios = HORARIOS_ENTREGA,
+    dias = (3..7).map { HorarioDia(Plataforma.fechaLocal(it), libres = HORARIOS_ENTREGA) }
+)
+
+suspend fun obtenerAgenda(token: String): ApiResult<Agenda> = peticion(
+    hacer = {
+        client.get("$BASE_URL/horarios") {
+            bearerAuth(token)
+            timeout { requestTimeoutMillis = ESPERA_SERVIDOR_DORMIDO_MS }
+        }
+    },
+    leer = { it.body<Agenda>() }
+)

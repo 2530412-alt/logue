@@ -32,14 +32,29 @@ import kotlin.coroutines.cancellation.CancellationException
 /** Cantidades de agua que surte una pipa (las mismas opciones que muestra la app). */
 val LITROS_PERMITIDOS = setOf(1_000, 2_500, 5_000, 10_000)
 
-/** Días hacia adelante que el ciudadano puede pedir su pipa. */
+/** Agenda del ciudadano: elige día y hora con al menos [DIAS_MINIMOS_ANTICIPACION] días de anticipación
+ *  y como máximo [DIAS_MAXIMOS_SOLICITUD] días después de hoy (una semana). */
+const val DIAS_MINIMOS_ANTICIPACION = 3L
 const val DIAS_MAXIMOS_SOLICITUD = 7L
+
+/** Horarios de entrega que se pueden apartar (uno por solicitud; no se repite día y hora). */
+val HORARIOS_ENTREGA: List<String> = (8..17).map { "%02d:00".format(it) }
+
+/** Estados que ya no apartan su día y hora: la pipa se canceló o no se pudo entregar. */
+private val ESTADOS_QUE_LIBERAN = setOf(EstadoSolicitud.CANCELADA, EstadoSolicitud.NO_ENTREGADA)
 
 /** Estados en los que el ciudadano o el delegado todavía pueden cancelar. */
 private val ESTADOS_CANCELABLES = setOf(EstadoSolicitud.RECIBIDA, EstadoSolicitud.EN_PROCESO, EstadoSolicitud.PROGRAMADA)
 
 /** Estados que el repartidor puede poner desde su ruta. */
 private val ESTADOS_DE_ENTREGA = setOf(EstadoSolicitud.EN_CAMINO, EstadoSolicitud.ENTREGADA, EstadoSolicitud.NO_ENTREGADA)
+
+/** `GET /horarios`: días que el ciudadano puede elegir y, en cada uno, qué horas siguen libres. */
+@Serializable
+data class HorarioDia(val dia: String, val libres: List<String>, val ocupadas: List<String>)
+
+@Serializable
+data class Agenda(val minimoDias: Int, val maximoDias: Int, val horarios: List<String>, val dias: List<HorarioDia>)
 
 // ---------------------------------------------------------------------------------------------------
 //  Cuerpos de las peticiones
@@ -163,10 +178,32 @@ class Operaciones(
     private val clock: Clock
 ) {
     private fun hoy(): LocalDate = LocalDate.now(clock.withZone(appZone()))
+
+    /** Candado para que dos ciudadanos no aparten el mismo día y hora al mismo tiempo. */
+    private val candadoAgenda = Any()
+
+    /** La solicitud que ya apartó ese día y hora (sin contar [excepto]), o `null` si está libre. */
+    private fun ocupante(dia: String, hora: String, excepto: String? = null): Solicitud? =
+        solicitudes.all().firstOrNull { it.dia == dia && it.hora == hora && it.id != excepto && it.estado !in ESTADOS_QUE_LIBERAN }
+
+    /** Días que se pueden elegir hoy (de hoy + 3 a hoy + 7) con sus horas libres y ocupadas. */
+    fun agenda(): Agenda {
+        val hoy = hoy()
+        val dias = (DIAS_MINIMOS_ANTICIPACION..DIAS_MAXIMOS_SOLICITUD).map { n ->
+            val dia = hoy.plusDays(n).toString()
+            val (ocupadas, libres) = HORARIOS_ENTREGA.partition { ocupante(dia, it) != null }
+            HorarioDia(dia, libres, ocupadas)
+        }
+        return Agenda(DIAS_MINIMOS_ANTICIPACION.toInt(), DIAS_MAXIMOS_SOLICITUD.toInt(), HORARIOS_ENTREGA, dias)
+    }
     private fun ahora(): String = Instant.now(clock).toString()
 
     /** SOL-03: el ciudadano pide una pipa. [tolerarDiasPasados] solo lo usa /sync (solicitud hecha sin señal ayer). */
-    fun crear(username: String, req: NuevaSolicitud, tolerarDiasPasados: Long = 0): Resultado {
+    fun crear(username: String, req: NuevaSolicitud, tolerarDiasPasados: Long = 0): Resultado = synchronized(candadoAgenda) {
+        crearSinCandado(username, req, tolerarDiasPasados)
+    }
+
+    private fun crearSinCandado(username: String, req: NuevaSolicitud, tolerarDiasPasados: Long): Resultado {
         val id = req.id?.trim()?.takeIf { it.isNotEmpty() } ?: UUID.randomUUID().toString()
         if (!ID_VALIDO.matches(id)) return error(HttpStatusCode.BadRequest, "Identificador de solicitud inválido")
         solicitudes.find(id)?.let { existente ->
@@ -180,12 +217,24 @@ class Operaciones(
         val dia = runCatching { LocalDate.parse(req.dia.trim()) }.getOrNull()
             ?: return error(HttpStatusCode.BadRequest, "El día debe tener el formato AAAA-MM-DD")
         val hoy = hoy()
-        if (dia.isBefore(hoy.minusDays(tolerarDiasPasados))) return error(HttpStatusCode.BadRequest, "La fecha no puede ser anterior a hoy")
+        // Una solicitud hecha sin señal se valida contra el día en que se hizo (hasta [tolerarDiasPasados] días antes)
+        if (dia.isBefore(hoy.plusDays(DIAS_MINIMOS_ANTICIPACION - tolerarDiasPasados))) {
+            return error(HttpStatusCode.BadRequest, "Pide tu pipa con al menos $DIAS_MINIMOS_ANTICIPACION días de anticipación")
+        }
         if (dia.isAfter(hoy.plusDays(DIAS_MAXIMOS_SOLICITUD))) {
             return error(HttpStatusCode.BadRequest, "Solo puedes pedir hasta $DIAS_MAXIMOS_SOLICITUD días después de hoy")
         }
-        val hora = req.hora?.trim()?.takeIf { it.isNotEmpty() } ?: "09:00"
-        if (runCatching { LocalTime.parse(hora) }.isFailure) return error(HttpStatusCode.BadRequest, "La hora debe tener el formato HH:MM")
+        val horaTexto = req.hora?.trim().orEmpty()
+        if (horaTexto.isEmpty()) return error(HttpStatusCode.BadRequest, "Elige la hora de entrega")
+        val horaLeida = runCatching { LocalTime.parse(horaTexto) }.getOrNull()
+            ?: return error(HttpStatusCode.BadRequest, "La hora debe tener el formato HH:MM")
+        val hora = horaLeida.toString()
+        if (hora !in HORARIOS_ENTREGA) {
+            return error(HttpStatusCode.BadRequest, "Elige una hora entre ${HORARIOS_ENTREGA.first()} y ${HORARIOS_ENTREGA.last()} h")
+        }
+        if (ocupante(dia.toString(), hora) != null) {
+            return error(HttpStatusCode.Conflict, "Ese día y hora ya los apartó otro ciudadano. Elige otro horario")
+        }
 
         val usuario = users.find(username)
         val domicilio = req.domicilio?.trim()?.takeIf { it.isNotEmpty() } ?: usuario?.calle.orEmpty()
@@ -204,7 +253,7 @@ class Operaciones(
             id = id,
             username = usuario?.username ?: username,
             dia = dia.toString(),
-            hora = LocalTime.parse(hora).toString(),
+            hora = hora,
             capacidadLitros = req.capacidadLitros,
             domicilio = domicilio,
             colonia = colonia,
@@ -232,7 +281,9 @@ class Operaciones(
     }
 
     /** ADM-03/ADM-04: el delegado asigna la solicitud a la ruta de un repartidor. */
-    fun asignar(id: String, req: Asignacion): Resultado {
+    fun asignar(id: String, req: Asignacion): Resultado = synchronized(candadoAgenda) { asignarSinCandado(id, req) }
+
+    private fun asignarSinCandado(id: String, req: Asignacion): Resultado {
         val s = solicitudes.find(id) ?: return error(HttpStatusCode.NotFound, "La solicitud no existe")
         if (s.estado !in ESTADOS_CANCELABLES) return error(HttpStatusCode.Conflict, "Solo se asignan solicitudes que no han salido")
         val rep = users.find(req.repartidor)
@@ -244,6 +295,11 @@ class Operaciones(
         val hora = req.hora?.trim()?.takeIf { it.isNotEmpty() } ?: s.hora
         if (runCatching { LocalTime.parse(hora) }.isFailure) return error(HttpStatusCode.BadRequest, "La hora debe tener el formato HH:MM")
         if (req.orden != null && req.orden < 1) return error(HttpStatusCode.BadRequest, "El orden debe ser 1 o mayor")
+        val horaNueva = LocalTime.parse(hora).toString()
+        val cambiaHorario = dia.toString() != s.dia || horaNueva != s.hora
+        if (cambiaHorario && ocupante(dia.toString(), horaNueva, excepto = s.id) != null) {
+            return error(HttpStatusCode.Conflict, "Ese día y hora ya están apartados por otra solicitud")
+        }
         val nueva = s.copy(
             estado = EstadoSolicitud.PROGRAMADA,
             repartidor = rep.username,
@@ -309,7 +365,7 @@ class Operaciones(
                     NuevaSolicitud(
                         id = op.entidadId,
                         dia = p.texto("dia") ?: p.texto("fechaPreferida") ?: "",
-                        hora = p.texto("hora"),
+                        hora = p.texto("hora") ?: p.texto("horaPreferida"),
                         capacidadLitros = p.entero("capacidadLitros") ?: p.entero("litros") ?: 0,
                         domicilio = p.texto("domicilio") ?: p.texto("direccion"),
                         colonia = p.texto("colonia"),
@@ -380,7 +436,12 @@ fun Route.operacionRoutes(
         responder(r)
     }
 
-    // POST /solicitudes {dia, capacidadLitros, hora?, domicilio?, colonia?, referencia?, notas?, id?}
+    // GET /horarios -> 200 + Agenda: días que se pueden elegir (de 3 a 7 días después de hoy) y sus horas libres
+    get("/horarios") {
+        call.respond(ops.agenda())
+    }
+
+    // POST /solicitudes {dia, capacidadLitros, hora, domicilio?, colonia?, referencia?, notas?, id?}
     //   -> 201 + Solicitud (RECIBIDA) | 200 si ya existía con ese id | 400 datos inválidos | 403 no es ciudadano
     post("/solicitudes") {
         if (!call.requireRole(Roles.CIUDADANO)) return@post

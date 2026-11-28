@@ -50,7 +50,6 @@ fun ApplicationTestBuilder.setupAquaGo(
     tokens: TokenService = TokenService(TEST_SECRET),
     users: UserRepository = JsonUserRepository(testUsers),
     solicitudes: SolicitudStore = SolicitudStore(),
-    codeSender: CodeSender = RecordingCodeSender(),
     recovery: RecoveryCodes = RecoveryCodes(),
     clock: Clock = MutableClock(),
     syncLog: SyncLog = SyncLog(),
@@ -67,7 +66,6 @@ fun ApplicationTestBuilder.setupAquaGo(
             corsOrigins = corsOrigins,
             loginsPerMinute = loginsPerMinute,
             recovery = recovery,
-            codeSender = codeSender,
             solicitudes = solicitudes,
             clock = clock,
             syncLog = syncLog,
@@ -75,15 +73,6 @@ fun ApplicationTestBuilder.setupAquaGo(
         )
     }
     return store
-}
-
-/** Guarda los códigos de recuperación que el servidor "enviaría" por SMS. */
-class RecordingCodeSender : CodeSender {
-    val sent = mutableListOf<Pair<String, String>>()
-    override fun send(phone: String, code: String) {
-        sent.add(phone to code)
-    }
-    val lastCode: String get() = sent.last().second
 }
 
 /** Hash de la contraseña de prueba, para crear cuentas a mano en las pruebas. */

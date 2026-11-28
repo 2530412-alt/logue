@@ -19,6 +19,8 @@ class OperacionTest {
 
     // El reloj de las pruebas marca 2026-11-04 12:00 UTC = 06:00 en America/Mexico_City
     private val hoy = "2026-11-04"
+    // Agenda: de 3 a 7 días después de hoy (2026-11-07 a 2026-11-11)
+    private val diaValido = "2026-11-07"
     private val json = Json { ignoreUnknownKeys = true }
 
     private fun solicitud(id: String, usuario: String, estado: String, repartidor: String? = null, dia: String = hoy) =
@@ -44,13 +46,14 @@ class OperacionTest {
     fun `el ciudadano pide una pipa y queda recibida`() = testApplication {
         val store = SolicitudStore()
         setupAquaGo(solicitudes = store)
-        val res = pedir(tokenOf("ciudadano"), """{"dia":"$hoy","capacidadLitros":2500,"domicilio":"Calle Camelia 12","referencia":"Portón verde"}""")
+        val res = pedir(tokenOf("ciudadano"), """{"dia":"$diaValido","hora":"10:00","capacidadLitros":2500,"domicilio":"Calle Camelia 12","referencia":"Portón verde"}""")
         assertEquals(HttpStatusCode.Created, res.status)
         val s = res.comoSolicitud(res.bodyAsText())
         assertEquals(EstadoSolicitud.RECIBIDA, s.estado)
         assertEquals("ciudadano", s.username)
         assertEquals("Portón verde", s.referencia)
-        assertEquals("09:00", s.hora)
+        assertEquals("10:00", s.hora)
+        assertEquals(diaValido, s.dia)
         assertEquals("Las Camelinas", s.colonia)
         assertEquals(1, store.of("ciudadano").size)
     }
@@ -60,28 +63,87 @@ class OperacionTest {
         val store = SolicitudStore()
         setupAquaGo(solicitudes = store)
         val token = tokenOf("ciudadano")
-        val cuerpo = """{"id":"abc-123","dia":"$hoy","capacidadLitros":1000,"domicilio":"Calle Camelia 12"}"""
+        val cuerpo = """{"id":"abc-123","dia":"$diaValido","hora":"09:00","capacidadLitros":1000,"domicilio":"Calle Camelia 12"}"""
         assertEquals(HttpStatusCode.Created, pedir(token, cuerpo).status)
         assertEquals(HttpStatusCode.OK, pedir(token, cuerpo).status)
         assertEquals(1, store.all().size)
     }
 
     @Test
-    fun `pedir pipa valida litros, fecha y domicilio`() = testApplication {
+    fun `pedir pipa valida litros, fecha, hora y domicilio`() = testApplication {
         setupAquaGo()
         val token = tokenOf("ciudadano")
-        assertEquals(HttpStatusCode.BadRequest, pedir(token, """{"dia":"$hoy","capacidadLitros":1234,"domicilio":"Calle 1"}""").status)
-        assertEquals(HttpStatusCode.BadRequest, pedir(token, """{"dia":"2026-11-03","capacidadLitros":1000,"domicilio":"Calle 1"}""").status)
-        assertEquals(HttpStatusCode.BadRequest, pedir(token, """{"dia":"2026-11-20","capacidadLitros":1000,"domicilio":"Calle 1"}""").status)
-        assertEquals(HttpStatusCode.BadRequest, pedir(token, """{"dia":"mañana","capacidadLitros":1000,"domicilio":"Calle 1"}""").status)
+        fun cuerpo(dia: String, hora: String? = "10:00", litros: Int = 1000, domicilio: String? = "Calle 1") =
+            buildString {
+                append("""{"dia":"$dia","capacidadLitros":$litros""")
+                hora?.let { append(""","hora":"$it"""") }
+                domicilio?.let { append(""","domicilio":"$it"""") }
+                append("}")
+            }
+        assertEquals(HttpStatusCode.BadRequest, pedir(token, cuerpo(diaValido, litros = 1234)).status)
+        assertEquals(HttpStatusCode.BadRequest, pedir(token, cuerpo("2026-11-03")).status, "fecha pasada")
+        assertEquals(HttpStatusCode.BadRequest, pedir(token, cuerpo(hoy)).status, "hoy no: mínimo 3 días antes")
+        assertEquals(HttpStatusCode.BadRequest, pedir(token, cuerpo("2026-11-06")).status, "solo 2 días de anticipación")
+        assertEquals(HttpStatusCode.BadRequest, pedir(token, cuerpo("2026-11-12")).status, "más de una semana")
+        assertEquals(HttpStatusCode.BadRequest, pedir(token, cuerpo("mañana")).status)
+        assertEquals(HttpStatusCode.BadRequest, pedir(token, cuerpo(diaValido, hora = null)).status, "la hora es obligatoria")
+        assertEquals(HttpStatusCode.BadRequest, pedir(token, cuerpo(diaValido, hora = "07:00")).status, "fuera del horario")
+        assertEquals(HttpStatusCode.BadRequest, pedir(token, cuerpo(diaValido, hora = "10:30")).status, "solo horas completas")
         // Sin domicilio y sin calle en el perfil
-        assertEquals(HttpStatusCode.BadRequest, pedir(token, """{"dia":"$hoy","capacidadLitros":1000}""").status)
+        assertEquals(HttpStatusCode.BadRequest, pedir(token, cuerpo(diaValido, domicilio = null)).status)
+        // El último día de la semana sí se puede
+        assertEquals(HttpStatusCode.Created, pedir(token, cuerpo("2026-11-11", hora = "17:00")).status)
+    }
+
+    @Test
+    fun `un dia y hora apartados no los puede apartar otro ciudadano`() = testApplication {
+        val store = SolicitudStore()
+        setupAquaGo(users = JsonUserRepository(testUsers + User("vecino", testPasswordHash(), Roles.CIUDADANO)), solicitudes = store)
+        val cuerpo = """{"dia":"$diaValido","hora":"11:00","capacidadLitros":1000,"domicilio":"Calle 1"}"""
+        val primero = pedir(tokenOf("ciudadano"), cuerpo)
+        assertEquals(HttpStatusCode.Created, primero.status)
+        assertEquals(HttpStatusCode.Conflict, pedir(tokenOf("vecino"), cuerpo).status)
+        // Otra hora del mismo día sí está libre
+        assertEquals(HttpStatusCode.Created, pedir(tokenOf("vecino"), cuerpo.replace("11:00", "12:00")).status)
+        // Si el primero cancela, el horario se libera
+        val id = primero.comoSolicitud(primero.bodyAsText()).id
+        assertEquals(HttpStatusCode.OK, patchJson("/solicitudes/$id/cancelar", tokenOf("ciudadano")).status)
+        assertEquals(HttpStatusCode.Created, pedir(tokenOf("vecino"), cuerpo).status)
+    }
+
+    @Test
+    fun `la agenda muestra los cinco dias que se pueden elegir y sus horas ocupadas`() = testApplication {
+        val store = SolicitudStore(initial = listOf(solicitud("s1", "vecino", EstadoSolicitud.RECIBIDA, dia = "2026-11-08")))
+        setupAquaGo(solicitudes = store)
+        val res = client.get("/horarios") { bearerAuth(tokenOf("ciudadano")) }
+        assertEquals(HttpStatusCode.OK, res.status)
+        val agenda = json.decodeFromString<Agenda>(res.bodyAsText())
+        assertEquals(listOf("2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"), agenda.dias.map { it.dia })
+        assertEquals(listOf("10:00"), agenda.dias[1].ocupadas)
+        assertEquals(9, agenda.dias[1].libres.size)
+        assertEquals(10, agenda.dias[0].libres.size)
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/horarios").status)
+    }
+
+    @Test
+    fun `el delegado no puede mover una solicitud a un horario ya apartado`() = testApplication {
+        val store = SolicitudStore(
+            initial = listOf(
+                solicitud("s1", "ciudadano", EstadoSolicitud.RECIBIDA, dia = diaValido),
+                solicitud("s2", "vecino", EstadoSolicitud.RECIBIDA, dia = diaValido).copy(hora = "12:00")
+            )
+        )
+        setupAquaGo(solicitudes = store)
+        val admin = tokenOf("admin")
+        assertEquals(HttpStatusCode.Conflict, patchJson("/solicitudes/s2/asignar", admin, """{"repartidor":"operador","hora":"10:00"}""").status)
+        assertEquals(HttpStatusCode.OK, patchJson("/solicitudes/s2/asignar", admin, """{"repartidor":"operador"}""").status, "su propio horario sigue valiendo")
+        assertEquals(HttpStatusCode.OK, patchJson("/solicitudes/s1/asignar", admin, """{"repartidor":"operador","hora":"10:00"}""").status)
     }
 
     @Test
     fun `solo el ciudadano pide pipas`() = testApplication {
         setupAquaGo()
-        val cuerpo = """{"dia":"$hoy","capacidadLitros":1000,"domicilio":"Calle 1"}"""
+        val cuerpo = """{"dia":"$diaValido","hora":"10:00","capacidadLitros":1000,"domicilio":"Calle 1"}"""
         assertEquals(HttpStatusCode.Forbidden, pedir(tokenOf("operador"), cuerpo).status)
         assertEquals(HttpStatusCode.Forbidden, pedir(tokenOf("admin"), cuerpo).status)
         assertEquals(HttpStatusCode.Unauthorized, client.post("/solicitudes") {
@@ -202,7 +264,7 @@ class OperacionTest {
         val token = tokenOf("ciudadano")
         val ops = """
             {"id":"op-a","tipo":"CREAR_SOLICITUD","entidadId":"sol-1","creadaEn":"2026-11-04T10:00:00Z",
-             "payload":{"fechaPreferida":"$hoy","litros":5000,"direccion":"Calle Camelia 12"}},
+             "payload":{"fechaPreferida":"$diaValido","horaPreferida":"13:00","litros":5000,"direccion":"Calle Camelia 12"}},
             {"id":"op-b","tipo":"CANCELAR_SOLICITUD","entidadId":"sol-1","creadaEn":"2026-11-04T10:05:00Z","payload":{}}
         """
         val res = json.decodeFromString<SyncRespuesta>(sync(token, ops).bodyAsText())

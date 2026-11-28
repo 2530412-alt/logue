@@ -96,11 +96,9 @@ class CorreoGoogleTest {
     @Test
     fun `la recuperacion manda el codigo al correo verificado y acepta el correo como cuenta`() = testApplication {
         val correos = RecordingCorreos()
-        val sms = RecordingCodeSender()
-        setupAquaGo(users = usuarios(anaVerificada), codeSender = sms, integraciones = Integraciones(correos = correos))
+        setupAquaGo(users = usuarios(anaVerificada), integraciones = Integraciones(correos = correos))
         assertEquals(HttpStatusCode.Accepted, post("/recuperacion/solicitar", """{"cuenta":"ana@gmail.com"}""").status)
         assertEquals("ana@gmail.com", correos.enviados.single().para)
-        assertEquals(sms.lastCode, correos.ultimoCodigo)
         val res = post("/recuperacion/confirmar", """{"cuenta":"ana","codigo":"${correos.ultimoCodigo}","contrasena":"nueva123"}""")
         assertEquals(HttpStatusCode.NoContent, res.status)
     }
