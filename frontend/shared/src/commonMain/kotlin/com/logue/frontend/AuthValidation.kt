@@ -63,16 +63,10 @@ fun validateRecoveryCode(code: String): String? = when {
     else -> null
 }
 
-/** A dónde "se envió" el código, sin mostrar el teléfono completo. */
+/** A dónde se envió el código: siempre al correo verificado de la cuenta (la recuperación es por correo). */
 fun recoveryDestination(account: String): String {
     val value = account.trim()
-    return if (value.isNotEmpty() && value.all { it.isDigit() }) {
-        "el teléfono que termina en ${value.takeLast(4)}"
-    } else if ('@' in value) {
-        "tu correo $value"
-    } else {
-        "el teléfono registrado en la cuenta $value"
-    }
+    return if ('@' in value) "tu correo $value" else "el correo verificado de tu cuenta"
 }
 
 /** 7711234567 -> "771 123 4567". */

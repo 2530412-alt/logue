@@ -21,11 +21,11 @@ private val RecoverStepSaver = Saver<RecoverStep, String>(save = { it.name }, re
 
 /**
  * Recuperar contraseña (USR-12) en 3 pasos:
- * 1) usuario o teléfono, 2) código de 6 dígitos que manda el servidor, 3) contraseña nueva.
+ * 1) usuario, teléfono o correo, 2) código de 6 dígitos que llega al correo, 3) contraseña nueva.
  *
- * El servidor genera el código (`POST /recuperacion/solicitar`) y solo cambia la contraseña si el
- * código es el vigente (`POST /recuperacion/confirmar`). El envío del código por SMS depende de
- * NOT-05: mientras no exista, el código queda en el registro del servidor.
+ * El servidor genera el código (`POST /recuperacion/solicitar`), lo envía al correo verificado de la
+ * cuenta (servicio de correo) y solo cambia la contraseña si el código es el vigente
+ * (`POST /recuperacion/confirmar`). La recuperación es por correo, no por SMS.
  */
 @Composable
 fun RecoverPasswordScreen(onBack: () -> Unit) {
@@ -79,7 +79,7 @@ fun RecoverPasswordScreen(onBack: () -> Unit) {
             when (step) {
                 RecoverStep.ACCOUNT -> {
                     Text(
-                        "Escribe tu usuario, el teléfono con el que te registraste o tu correo verificado. Te enviaremos un código de 6 dígitos.",
+                        "Escribe tu usuario, tu teléfono o tu correo. Te enviaremos un código de 6 dígitos a tu correo verificado.",
                         color = AppColors.TextMuted,
                         style = MaterialTheme.typography.bodyMedium
                     )

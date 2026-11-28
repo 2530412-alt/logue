@@ -100,8 +100,8 @@ class AuthValidationTest {
 
     @Test
     fun destinoDelCodigoOcultaElTelefono() {
-        assertEquals("el teléfono que termina en 4567", recoveryDestination("7711234567"))
-        assertEquals("el teléfono registrado en la cuenta ciudadano", recoveryDestination("ciudadano"))
+        assertEquals("el correo verificado de tu cuenta", recoveryDestination("7711234567"))
+        assertEquals("el correo verificado de tu cuenta", recoveryDestination("ciudadano"))
     }
 
     @Test
