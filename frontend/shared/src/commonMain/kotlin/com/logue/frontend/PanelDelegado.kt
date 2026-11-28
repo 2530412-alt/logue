@@ -607,9 +607,18 @@ private fun SeccionReportes(lista: List<Solicitud>, ancha: Boolean, onEnviarCorr
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(7 to "Últimos 7 días", 30 to "Últimos 30 días").forEach { (d, t) -> FiltroChip(t, dias == d) { dias = d } }
         }
+        Plataforma.imprimirHtml?.let { imprimir ->
+            BotonSecundario("Imprimir reporte", {
+                imprimir(reporteHtml(lista.filter { it.dia in desde..hasta }, desde, hasta, Plataforma.fechaHoraLocal()))
+            }, icono = Icono.RECIBO)
+            Spacer(Modifier.width(8.dp))
+        }
         Plataforma.descargarTexto?.let { descargar ->
             BotonSecundario("Descargar CSV", {
-                descargar("aquago_solicitudes_${desde}_a_${hasta}.csv", solicitudesCsv(lista.filter { it.dia in desde..hasta }))
+                descargar(
+                    "aquago_solicitudes_${desde}_a_${hasta}.csv",
+                    solicitudesCsv(lista.filter { it.dia in desde..hasta }, desde, hasta, Plataforma.fechaHoraLocal())
+                )
             }, icono = Icono.NOTA)
             Spacer(Modifier.width(8.dp))
         }

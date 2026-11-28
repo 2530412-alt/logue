@@ -54,9 +54,13 @@ class AdminVistaTest {
 
     @Test
     fun csvYValidaciones() {
-        val csv = solicitudesCsv(listOf(s("x", EstadoSolicitud.RECIBIDA)))
-        assertTrue(csv.startsWith("folio,dia,hora"))
+        val csv = solicitudesCsv(listOf(s("x", EstadoSolicitud.RECIBIDA)), "2026-11-20", "2026-11-26", "27/11/2026 21:40")
+        val lineas = csv.lines()
+        assertEquals("\"AquaGo - Reporte de solicitudes de pipas\"", lineas[0])
+        assertEquals("\"Fecha de generación: 27/11/2026 21:40\"", lineas[1])
+        assertTrue(lineas[4].startsWith("\"Día\",\"Hora\",\"Ciudadano\""))
         assertTrue("\"Recibida\"" in csv)
+        assertTrue(csv.contains("Total general (1 solicitudes)"))
         assertTrue(esFechaValida("2026-11-23"))
         assertFalse(esFechaValida("23/11/2026"))
         assertTrue(esHoraValida("09:30"))
@@ -79,5 +83,40 @@ class CorreoValidacionTest {
     fun recuperarConCorreo() {
         assertEquals(null, validateRecoveryAccount("ana@gmail.com"))
         assertEquals("tu correo ana@gmail.com", recoveryDestination("ana@gmail.com"))
+    }
+}
+
+/** Lineamientos de reportes: el día solo aparece cuando cambia, subtotal por día y total general. */
+class ReporteLineamientosTest {
+    private fun sol(id: String, dia: String, hora: String, litros: Int, estado: String) =
+        Solicitud(id, "ana", dia, hora, litros, "Calle 1", "Las Camelinas", estado)
+
+    @Test
+    fun diaSoloCuandoCambiaYSubtotales() {
+        val filas = filasReporte(
+            listOf(
+                sol("b", "2026-11-20", "10:00", 2_500, EstadoSolicitud.ENTREGADA),
+                sol("a", "2026-11-20", "09:00", 5_000, EstadoSolicitud.ENTREGADA),
+                sol("c", "2026-11-21", "09:00", 1_000, EstadoSolicitud.CANCELADA)
+            )
+        )
+        assertEquals(listOf("20/11/2026", "", "", "21/11/2026", "", ""), filas.map { it.dia })
+        assertEquals("09:00", filas[0].hora)
+        assertEquals(TipoFila.SUBTOTAL, filas[2].tipo)
+        assertEquals(7_500, filas[2].litrosSolicitados)
+        assertEquals(7_500, filas[2].litrosEntregados)
+        assertEquals(TipoFila.TOTAL, filas.last().tipo)
+        assertEquals(8_500, filas.last().litrosSolicitados)
+        assertEquals(7_500, filas.last().litrosEntregados)
+    }
+
+    @Test
+    fun reporteImprimibleConTituloFechaYPaginas() {
+        val html = reporteHtml(listOf(sol("a", "2026-11-20", "09:00", 5_000, EstadoSolicitud.ENTREGADA)), "2026-11-20", "2026-11-26", "27/11/2026 21:40")
+        assertTrue("<h1>Reporte de solicitudes de pipas</h1>" in html)
+        assertTrue("Fecha de generación: <b>27/11/2026 21:40</b>" in html)
+        assertTrue("counter(page)" in html)
+        assertTrue("<th>Litros entregados</th>" in html)
+        assertTrue("Total general" in html)
     }
 }

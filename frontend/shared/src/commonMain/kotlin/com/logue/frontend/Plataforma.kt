@@ -71,6 +71,12 @@ object Plataforma {
 
     /** Descarga un archivo de texto (CSV del reporte). `null` donde no se puede. */
     var descargarTexto: ((nombre: String, contenido: String) -> Unit)? = null
+
+    /** Abre el diálogo de impresión con un reporte en HTML (web). `null` donde no se puede. */
+    var imprimirHtml: ((html: String) -> Unit)? = null
+
+    /** Fecha y hora local para el encabezado de los reportes («27/11/2026 21:40»). */
+    var fechaHoraLocal: () -> String = { formatDia(fechaUtc(0)) }
 }
 
 @OptIn(ExperimentalTime::class)
