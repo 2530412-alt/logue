@@ -182,12 +182,12 @@ fun reporteHtml(lista: List<Solicitud>, desde: String, hasta: String, generado: 
             "<td>${escaparHtml(f.domicilio)}</td><td>${escaparHtml(f.colonia)}</td><td class=\"num\">${formatLitros(f.litrosSolicitados)}</td>" +
             "<td>${escaparHtml(f.estado)}</td><td>${escaparHtml(f.repartidor)}</td><td class=\"num\">${formatLitros(f.litrosEntregados)}</td></tr>"
     }
-    val porRepartidor = lista.filter { it.repartidor != null }.groupBy { it.repartidor!! }.toSortedMap()
-    val filasRep = porRepartidor.entries.joinToString("") { (rep, l) ->
+    val porRepartidor: List<Pair<String, List<Solicitud>>> = lista.filter { it.repartidor != null }.groupBy { it.repartidor!! }.toList().sortedBy { it.first }
+    val filasRep: String = porRepartidor.joinToString("") { (rep, l) ->
         "<tr><td>${escaparHtml(rep)}</td><td class=\"num\">${l.size}</td><td class=\"num\">${l.count { it.estado == EstadoSolicitud.ENTREGADA }}</td>" +
             "<td class=\"num\">${l.count { it.estado == EstadoSolicitud.NO_ENTREGADA }}</td><td class=\"num\">${formatLitros(l.sumOf { litrosEntregadosDe(it) })}</td></tr>"
     }
-    val asignadas = porRepartidor.values.flatten()
+    val asignadas = porRepartidor.flatMap { it.second }
     val totalRep = "<tr class=\"total\"><td>Total</td><td class=\"num\">${asignadas.size}</td><td class=\"num\">${asignadas.count { it.estado == EstadoSolicitud.ENTREGADA }}</td>" +
         "<td class=\"num\">${asignadas.count { it.estado == EstadoSolicitud.NO_ENTREGADA }}</td><td class=\"num\">${formatLitros(asignadas.sumOf { litrosEntregadosDe(it) })}</td></tr>"
     val encabezados = ENCABEZADOS_REPORTE.joinToString("") { "<th>$it</th>" }
