@@ -63,6 +63,9 @@ class AdminVistaTest {
         assertTrue(csv.contains("Total general (1 solicitudes)"))
         assertTrue(esFechaValida("2026-11-23"))
         assertFalse(esFechaValida("23/11/2026"))
+        assertEquals("2026-11-30", fechaDesdeDdMmAaaa("30/11/2026"))
+        assertEquals(null, fechaDesdeDdMmAaaa("2026-11-30"))
+        assertEquals(null, fechaDesdeDdMmAaaa("31/13/2026"))
         assertTrue(esHoraValida("09:30"))
         assertFalse(esHoraValida("25:00"))
     }

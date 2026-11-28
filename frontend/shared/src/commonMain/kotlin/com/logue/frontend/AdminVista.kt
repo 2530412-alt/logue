@@ -211,6 +211,14 @@ td { padding: 4px 6px; border-bottom: 1px solid #DCE5EE; font-size: 9pt; }
 </body></html>"""
 }
 
+/** «30/11/2026» -> «2026-11-30»; `null` si no tiene la forma dd/mm/aaaa. */
+fun fechaDesdeDdMmAaaa(texto: String): String? {
+    val p = texto.trim().split('/')
+    if (p.size != 3 || p[0].length != 2 || p[1].length != 2 || p[2].length != 4) return null
+    val iso = "${p[2]}-${p[1]}-${p[0]}"
+    return iso.takeIf { esFechaValida(it) }
+}
+
 /** ¿Es una fecha AAAA-MM-DD válida a simple vista? */
 fun esFechaValida(texto: String): Boolean {
     val p = texto.trim().split('-')

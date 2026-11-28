@@ -356,7 +356,9 @@ private fun DialogoAsignar(
     onAsignar: (Asignacion) -> Unit
 ) {
     var repartidor by remember { mutableStateOf(s.repartidor ?: repartidores.firstOrNull()?.username) }
-    var dia by remember { mutableStateOf(s.dia) }
+    // El día se escribe como dd/mm/aaaa (comodín de fecha) y se envía al servidor como AAAA-MM-DD
+    var diaTexto by remember { mutableStateOf(formatDia(s.dia)) }
+    val dia = fechaDesdeDdMmAaaa(diaTexto) ?: ""
     var hora by remember { mutableStateOf(s.hora) }
     var orden by remember(repartidor, dia) {
         mutableStateOf(
@@ -375,7 +377,7 @@ private fun DialogoAsignar(
             val r = repartidor
             error = when {
                 r == null -> "Primero da de alta un repartidor en Usuarios"
-                !esFechaValida(dia) -> "El día debe ser AAAA-MM-DD"
+                !esFechaValida(dia) -> "El día debe ser dd/mm/aaaa, por ejemplo 30/11/2026"
                 !esHoraValida(hora) -> "La hora debe ser HH:MM (24 horas)"
                 (orden.toIntOrNull() ?: 0) < 1 -> "El orden debe ser 1 o más"
                 else -> null
@@ -395,8 +397,8 @@ private fun DialogoAsignar(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CampoCorto("Día (AAAA-MM-DD)", dia, Modifier.weight(1.4f)) { dia = it }
-            CampoCorto("Hora", hora, Modifier.weight(1f)) { hora = it }
+            CampoCorto("Día (dd/mm/aaaa)", diaTexto, Modifier.weight(1.4f)) { diaTexto = it.filter { c -> c.isDigit() || c == '/' }.take(10) }
+            CampoCorto("Hora (hh:mm)", hora, Modifier.weight(1f)) { hora = it.filter { c -> c.isDigit() || c == ':' }.take(5) }
             CampoCorto("Orden", orden, Modifier.weight(0.8f), numerico = true) { orden = it.filter(Char::isDigit).take(3) }
         }
         error?.let { Text(it, color = AppColors.Red, style = MaterialTheme.typography.bodySmall) }
